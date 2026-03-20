@@ -1,6 +1,34 @@
 import { NextRequest } from 'next/server'
 import { GET } from '@/app/api/feed/route'
 
+// Mocks are hoisted — build the mock client inside the factory, then grab a ref after
+jest.mock('@/lib/supabase', () => {
+  const limitFn = jest.fn()
+  const orderFn = jest.fn().mockReturnValue({ limit: limitFn })
+  const ltFn = jest.fn().mockReturnValue({ order: orderFn })
+  const eqFn = jest.fn().mockReturnValue({ order: orderFn, lt: ltFn })
+  const selectFn = jest.fn().mockReturnValue({ eq: eqFn })
+  const fromFn = jest.fn().mockReturnValue({ select: selectFn })
+  const client = { from: fromFn }
+
+  return {
+    getServerClient: jest.fn().mockResolvedValue(client),
+    serviceRoleClient: client,
+    __mocks: { limitFn, orderFn, eqFn, selectFn, fromFn },
+  }
+})
+
+import * as supabaseMod from '@/lib/supabase'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mocks = (supabaseMod as any).__mocks as {
+  limitFn: jest.Mock
+  orderFn: jest.Mock
+  eqFn: jest.Mock
+  selectFn: jest.Mock
+  fromFn: jest.Mock
+}
+
 const mockArticleRows = [
   {
     id: 'a1',
@@ -28,28 +56,14 @@ const mockArticleRows = [
   },
 ]
 
-const mockLimit = jest.fn().mockResolvedValue({ data: mockArticleRows, error: null })
-const mockOrder = jest.fn().mockReturnValue({ limit: mockLimit })
-const mockEq = jest.fn().mockReturnValue({ order: mockOrder })
-const mockSelect = jest.fn().mockReturnValue({ eq: mockEq })
-const mockFrom = jest.fn().mockReturnValue({ select: mockSelect })
-
-jest.mock('@/lib/supabase', () => ({
-  getServerClient: jest.fn().mockResolvedValue({
-    from: mockFrom,
-  }),
-  serviceRoleClient: {
-    from: mockFrom,
-  },
-}))
-
 beforeEach(() => {
   jest.clearAllMocks()
-  mockLimit.mockResolvedValue({ data: mockArticleRows, error: null })
-  mockOrder.mockReturnValue({ limit: mockLimit })
-  mockEq.mockReturnValue({ order: mockOrder, lt: jest.fn().mockReturnValue({ order: mockOrder }) })
-  mockSelect.mockReturnValue({ eq: mockEq })
-  mockFrom.mockReturnValue({ select: mockSelect })
+  mocks.limitFn.mockResolvedValue({ data: mockArticleRows, error: null })
+  mocks.orderFn.mockReturnValue({ limit: mocks.limitFn })
+  mocks.eqFn.mockReturnValue({ order: mocks.orderFn, lt: jest.fn().mockReturnValue({ order: mocks.orderFn }) })
+  mocks.selectFn.mockReturnValue({ eq: mocks.eqFn })
+  mocks.fromFn.mockReturnValue({ select: mocks.selectFn })
+  ;(supabaseMod.getServerClient as jest.Mock).mockResolvedValue({ from: mocks.fromFn })
 })
 
 describe('GET /api/feed', () => {
@@ -78,7 +92,7 @@ describe('GET /api/feed', () => {
 
   it('filters articles by tag', async () => {
     const rows = mockArticleRows.filter(r => r.sources.custom_tags.includes('tech'))
-    mockLimit.mockResolvedValue({ data: rows, error: null })
+    mocks.limitFn.mockResolvedValue({ data: rows, error: null })
 
     const request = new NextRequest('http://localhost/api/feed?tag=tech')
 
@@ -90,7 +104,7 @@ describe('GET /api/feed', () => {
   })
 
   it('maps is_bookmarked correctly', async () => {
-    mockLimit.mockResolvedValue({ data: mockArticleRows, error: null })
+    mocks.limitFn.mockResolvedValue({ data: mockArticleRows, error: null })
 
     const request = new NextRequest('http://localhost/api/feed')
 
@@ -105,7 +119,7 @@ describe('GET /api/feed', () => {
   })
 
   it('returns 500 when Supabase errors', async () => {
-    mockLimit.mockResolvedValue({ data: null, error: { message: 'db error' } })
+    mocks.limitFn.mockResolvedValue({ data: null, error: { message: 'db error' } })
 
     const request = new NextRequest('http://localhost/api/feed')
 

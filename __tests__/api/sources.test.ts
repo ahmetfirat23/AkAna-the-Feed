@@ -1,8 +1,5 @@
-import { GET, POST, DELETE } from '@/app/api/sources/route'
-
-// Mock SSRF filter to always allow in tests
+// Mock SSRF filter and http/https before importing the route
 jest.mock('ssrf-req-filter', () => jest.fn(() => null))
-// Mock http/https so validateUrl resolves true without network calls
 jest.mock('http', () => ({
   request: jest.fn((_url: string, _opts: object, cb: () => void) => {
     cb()
@@ -16,62 +13,75 @@ jest.mock('https', () => ({
   }),
 }))
 
-const mockSingle = jest.fn().mockResolvedValue({
-  data: { id: 's1', name: 'Test Source', url: 'https://example.com/feed', custom_tags: ['tech'] },
-  error: null,
-})
-const mockSelect = jest.fn().mockReturnValue({ single: mockSingle })
-const mockInsert = jest.fn().mockReturnValue({ select: mockSelect })
-const mockDeleteEq = jest.fn().mockResolvedValue({ error: null })
-const mockDelete = jest.fn().mockReturnValue({ eq: mockDeleteEq })
-const mockOrder = jest.fn().mockResolvedValue({
-  data: [{ id: 's1', name: 'Source One' }],
-  error: null,
-})
-const mockGetSelect = jest.fn().mockReturnValue({ order: mockOrder })
-const mockEq = jest.fn().mockReturnValue({ order: mockOrder })
-const mockFrom = jest.fn()
+jest.mock('@/lib/supabase', () => {
+  // GET chain: from -> select -> order  (resolves)
+  // POST chain: from -> insert -> select -> single  (resolves)
+  // DELETE chain: from -> delete -> eq  (resolves)
+  const singleFn = jest.fn().mockResolvedValue({
+    data: { id: 's1', name: 'Test Source', url: 'https://example.com/feed', custom_tags: ['tech'] },
+    error: null,
+  })
+  const insertSelectFn = jest.fn().mockReturnValue({ single: singleFn })
+  const insertFn = jest.fn().mockReturnValue({ select: insertSelectFn })
+  const deleteEqFn = jest.fn().mockResolvedValue({ error: null })
+  const deleteFn = jest.fn().mockReturnValue({ eq: deleteEqFn })
+  const orderFn = jest.fn().mockResolvedValue({ data: [{ id: 's1', name: 'Source One' }], error: null })
+  const selectFn = jest.fn().mockReturnValue({ order: orderFn })
+  const fromFn = jest.fn().mockReturnValue({
+    select: selectFn,
+    insert: insertFn,
+    delete: deleteFn,
+  })
+  const client = { from: fromFn }
 
-jest.mock('@/lib/supabase', () => ({
-  serviceRoleClient: { from: mockFrom },
-  getServerClient: jest.fn(),
-}))
+  return {
+    serviceRoleClient: client,
+    getServerClient: jest.fn(),
+    __mocks: { singleFn, insertSelectFn, insertFn, deleteEqFn, deleteFn, orderFn, selectFn, fromFn },
+  }
+})
 
 jest.mock('@/lib/session', () => ({
   getSession: jest.fn(),
 }))
 
+import { GET, POST, DELETE } from '@/app/api/sources/route'
+import * as supabaseMod from '@/lib/supabase'
 import { getSession } from '@/lib/session'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mocks = (supabaseMod as any).__mocks as {
+  singleFn: jest.Mock
+  insertSelectFn: jest.Mock
+  insertFn: jest.Mock
+  deleteEqFn: jest.Mock
+  deleteFn: jest.Mock
+  orderFn: jest.Mock
+  selectFn: jest.Mock
+  fromFn: jest.Mock
+}
+
 const mockGetSession = getSession as jest.MockedFunction<typeof getSession>
 
 beforeEach(() => {
   jest.clearAllMocks()
-  // Default: authenticated admin
   mockGetSession.mockResolvedValue({ isAdmin: true } as never)
 
-  mockFrom.mockImplementation((table: string) => {
-    if (table === 'sources') {
-      return {
-        select: mockGetSelect,
-        insert: mockInsert,
-        delete: mockDelete,
-        eq: mockEq,
-      }
-    }
-    return { select: mockGetSelect, insert: mockInsert, delete: mockDelete, eq: mockEq }
-  })
-
-  // Reset sub-mocks
-  mockOrder.mockResolvedValue({ data: [{ id: 's1', name: 'Source One' }], error: null })
-  mockGetSelect.mockReturnValue({ order: mockOrder })
-  mockInsert.mockReturnValue({ select: mockSelect })
-  mockSelect.mockReturnValue({ single: mockSingle })
-  mockSingle.mockResolvedValue({
+  mocks.singleFn.mockResolvedValue({
     data: { id: 's1', name: 'Test Source', url: 'https://example.com/feed', custom_tags: ['tech'] },
     error: null,
   })
-  mockDeleteEq.mockResolvedValue({ error: null })
-  mockDelete.mockReturnValue({ eq: mockDeleteEq })
+  mocks.insertSelectFn.mockReturnValue({ single: mocks.singleFn })
+  mocks.insertFn.mockReturnValue({ select: mocks.insertSelectFn })
+  mocks.deleteEqFn.mockResolvedValue({ error: null })
+  mocks.deleteFn.mockReturnValue({ eq: mocks.deleteEqFn })
+  mocks.orderFn.mockResolvedValue({ data: [{ id: 's1', name: 'Source One' }], error: null })
+  mocks.selectFn.mockReturnValue({ order: mocks.orderFn })
+  mocks.fromFn.mockReturnValue({
+    select: mocks.selectFn,
+    insert: mocks.insertFn,
+    delete: mocks.deleteFn,
+  })
 })
 
 describe('GET /api/sources', () => {
@@ -84,7 +94,7 @@ describe('GET /api/sources', () => {
   })
 
   it('returns 500 when Supabase errors', async () => {
-    mockOrder.mockResolvedValue({ data: null, error: { message: 'db error' } })
+    mocks.orderFn.mockResolvedValue({ data: null, error: { message: 'db error' } })
 
     const response = await GET()
 
@@ -170,7 +180,7 @@ describe('POST /api/sources', () => {
   })
 
   it('returns 409 on duplicate URL', async () => {
-    mockSingle.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate' } })
+    mocks.singleFn.mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate' } })
 
     const request = new Request('http://localhost/api/sources', {
       method: 'POST',
@@ -236,7 +246,7 @@ describe('DELETE /api/sources', () => {
   })
 
   it('returns 500 when Supabase errors', async () => {
-    mockDeleteEq.mockResolvedValue({ error: { message: 'db error' } })
+    mocks.deleteEqFn.mockResolvedValue({ error: { message: 'db error' } })
 
     const request = new Request('http://localhost/api/sources', {
       method: 'DELETE',
