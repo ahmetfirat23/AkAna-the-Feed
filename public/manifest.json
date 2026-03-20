@@ -1,0 +1,13 @@
+{
+  "name": "AkAna",
+  "short_name": "AkAna",
+  "description": "Your personal content feed",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7FAFA",
+  "theme_color": "#0A7E8C",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

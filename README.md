@@ -93,6 +93,13 @@ To test the cron job locally:
 curl -X POST -H "Authorization: Bearer YOUR_CRON_SECRET" http://localhost:3000/api/cron/refresh
 ```
 
+### 5. Run tests
+
+```bash
+npm test              # unit tests
+npm run test:e2e      # Playwright E2E tests (requires app running)
+```
+
 ---
 
 ## Adding RSS feeds

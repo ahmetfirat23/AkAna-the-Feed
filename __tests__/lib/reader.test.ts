@@ -11,8 +11,7 @@ jest.mock('ssrf-req-filter', () => {
   };
 });
 
-// jest.mock factories are hoisted and cannot reference outer variables.
-// We expose the mock via the module factory itself.
+// jest.mock factories are hoisted — cannot reference outer variables.
 jest.mock('https', () => ({
   request: jest.fn(),
 }));
@@ -21,19 +20,30 @@ jest.mock('http', () => ({
   request: jest.fn(),
 }));
 
-// Mock @mozilla/readability — the parse function is reassigned per test
+// Mock @mozilla/readability — each test configures Readability.parse
 jest.mock('@mozilla/readability', () => ({
   Readability: jest.fn(),
 }));
 
-// Mock jsdom — always returns a stable document object
+// Mock jsdom to avoid ESM dependency issues in test environment.
+// reader.ts uses JSDOM only to build a DOM for Readability, so we just
+// need to return a window.document stub.
 jest.mock('jsdom', () => ({
   JSDOM: jest.fn().mockImplementation(() => ({
-    window: { document: { createElement: jest.fn() } },
+    window: { document: { createElement: jest.fn(), body: {} } },
   })),
 }));
 
-// Imports come after mock declarations
+// Mock lib/sanitize so it's a simple pass-through (avoids DOMPurify needing
+// a real DOM environment while jsdom is mocked).
+jest.mock('../../lib/sanitize', () => ({
+  sanitizeHtml: jest.fn((html: string): string => {
+    // Strip script tags so the "sanitizes content" test can verify
+    return html.replace(/<script[\s\S]*?<\/script>/gi, '');
+  }),
+}));
+
+// Imports come AFTER mock declarations
 import https from 'https';
 import { fetchArticleContent } from '../../lib/reader';
 
@@ -66,7 +76,7 @@ function makeMockPair(statusCode: number): MockPair {
   };
 }
 
-// Helper: set up mockHttpsRequest to deliver a successful 200 response
+// Helper: configure mockHttpsRequest to deliver a successful 200 response
 function setupSuccessResponse(body: string): void {
   const pair = makeMockPair(200);
   mockHttpsRequest.mockImplementationOnce(
@@ -86,9 +96,14 @@ describe('fetchArticleContent', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Re-establish the JSDOM mock after clearAllMocks (clearAllMocks only clears
-    // call records; implementations set by mockImplementation survive, but
-    // the jsdom module was mocked once in the factory above — it's stable)
+    // After clearAllMocks(), we need to re-establish the JSDOM default mock
+    // implementation because clearAllMocks() clears mockImplementation too
+    // when the mock was created with jest.fn() + no explicit mockReturnValue.
+    // Re-set it here to be safe.
+    const { JSDOM } = require('jsdom') as { JSDOM: jest.Mock };
+    JSDOM.mockImplementation(() => ({
+      window: { document: { createElement: jest.fn(), body: {} } },
+    }));
   });
 
   it('returns null on fetch error (request emits error)', async () => {
@@ -116,7 +131,6 @@ describe('fetchArticleContent', () => {
   it('returns null when Readability fails to parse (returns null)', async () => {
     setupSuccessResponse('<html><body><p>Content</p></body></html>');
 
-    // Readability constructor returns an instance whose parse() returns null
     readabilityMod.Readability.mockImplementation(() => ({
       parse: jest.fn().mockReturnValue(null),
     }));
@@ -136,11 +150,7 @@ describe('fetchArticleContent', () => {
       }),
     }));
 
-    const { JSDOM } = require('jsdom');
-    console.log('Readability mock impl set:', readabilityMod.Readability.getMockImplementation()?.toString().slice(0, 50));
-    console.log('JSDOM mock impl:', JSDOM.getMockImplementation()?.toString().slice(0, 50));
     const result = await fetchArticleContent('https://example.com/article');
-    console.log('Result:', result);
 
     expect(result).not.toBeNull();
     expect(result!.title).toBe('Test Article Title');

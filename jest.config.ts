@@ -20,6 +20,11 @@ const config: Config = {
   transform: {
     '^.+\\.(t|j)sx?$': ['ts-jest', { tsconfig: { jsx: 'react-jsx' } }],
   },
+  // Some transitive dependencies of jsdom ship pure ESM. Allow ts-jest/babel
+  // to transform them by NOT ignoring them in node_modules.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(@exodus/bytes|encoding-lite|html-encoding-sniffer)/)',
+  ],
 };
 
 export default createJestConfig(config);
