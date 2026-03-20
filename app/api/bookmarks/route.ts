@@ -1,0 +1,67 @@
+import { serviceRoleClient } from '@/lib/supabase';
+import { getSession } from '@/lib/session';
+
+export async function GET() {
+  const { data, error } = await serviceRoleClient
+    .from('bookmarks')
+    .select(
+      `
+      id,
+      created_at,
+      article_id,
+      articles (
+        id,
+        title,
+        description,
+        summary,
+        link,
+        published_at,
+        image_url,
+        source_id,
+        sources (
+          name,
+          custom_tags
+        )
+      )
+    `
+    )
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  return Response.json(data);
+}
+
+export async function POST(request: Request) {
+  const session = await getSession();
+  if (!session.isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  let body: { article_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return new Response('Bad Request', { status: 400 });
+  }
+
+  const { article_id } = body;
+
+  if (!article_id) {
+    return new Response('Bad Request: article_id is required', { status: 400 });
+  }
+
+  const { data, error } = await serviceRoleClient
+    .from('bookmarks')
+    .upsert({ article_id }, { onConflict: 'article_id' })
+    .select()
+    .single();
+
+  if (error) {
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  return Response.json(data, { status: 201 });
+}
