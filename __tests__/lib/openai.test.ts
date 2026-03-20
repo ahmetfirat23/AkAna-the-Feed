@@ -5,6 +5,7 @@ const mockCreate = jest.fn();
 
 jest.mock('openai', () => {
   return {
+    __esModule: true,
     default: jest.fn().mockImplementation(() => ({
       chat: {
         completions: {
