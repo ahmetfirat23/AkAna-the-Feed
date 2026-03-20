@@ -1,3 +1,18 @@
+/**
+ * @jest-environment jsdom
+ */
+
+// isomorphic-dompurify imports jsdom at module load time to create a window
+// object for DOMPurify. In jest-environment-jsdom the global window is already
+// a full DOM, so we shim the jsdom module to reuse it instead of pulling in
+// the npm jsdom package (which has ESM-only transitive deps incompatible with
+// Jest's CJS transform).
+jest.mock('jsdom', () => ({
+  JSDOM: jest.fn().mockImplementation(() => ({
+    window: global.window,
+  })),
+}));
+
 import { sanitizeHtml } from '../../lib/sanitize';
 
 describe('sanitizeHtml', () => {
