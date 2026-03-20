@@ -36,13 +36,30 @@ export async function getServerClient() {
 
 // Service role client — server-side only. Never import this in client components.
 // Used by cron jobs and admin mutation routes that need to bypass RLS.
-export const serviceRoleClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+// Lazy singleton so it is not instantiated at build time (when env vars aren't set).
+let _serviceRoleClient: ReturnType<typeof createClient> | null = null;
+export function getServiceClient() {
+  if (!_serviceRoleClient) {
+    _serviceRoleClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
   }
-)
+  return _serviceRoleClient;
+}
+// Keep backward-compatible export used by some routes
+// Cast to `any` to avoid Supabase generic inference issues when no DB type param is provided.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const serviceRoleClient = new Proxy({} as any, {
+  get(_target, prop) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (getServiceClient() as any)[prop];
+  },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+}) as any;

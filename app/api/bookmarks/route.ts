@@ -53,11 +53,11 @@ export async function POST(request: Request) {
     return new Response('Bad Request: article_id is required', { status: 400 });
   }
 
-  const { data, error } = await serviceRoleClient
+  const { data, error } = await (serviceRoleClient
     .from('bookmarks')
-    .upsert({ article_id }, { onConflict: 'article_id' })
+    .insert({ article_id } as unknown as never)
     .select()
-    .single();
+    .single());
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 });

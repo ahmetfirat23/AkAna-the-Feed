@@ -123,7 +123,7 @@ export async function fetchAndParseFeed(url: string): Promise<ParsedArticle[]> {
       const stripped = stripHtml(rawDescription);
       const description = stripped.length > 500 ? stripped.slice(0, 497) + '…' : stripped;
 
-      const imageUrl = extractImageUrl(item as Parser.Item & Record<string, unknown>);
+      const imageUrl = extractImageUrl(item as unknown as Parser.Item & Record<string, unknown>);
 
       let publishedAt: Date | null = null;
       if (item.pubDate) {

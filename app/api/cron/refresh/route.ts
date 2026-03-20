@@ -72,10 +72,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const supabase = serviceRoleClient;
 
   // 2. Fetch all active sources
-  const { data: sources, error: sourcesError } = await supabase
+  const { data: sourcesRaw, error: sourcesError } = await supabase
     .from('sources')
     .select('id, name, url, last_fetched_at, consecutive_errors')
     .eq('active', true);
+  const sources = sourcesRaw as unknown as {
+    id: string;
+    name: string;
+    url: string;
+    last_fetched_at: string | null;
+    consecutive_errors: number | null;
+  }[] | null;
 
   if (sourcesError) {
     return NextResponse.json({ error: 'Failed to load sources' }, { status: 500 });
@@ -157,7 +164,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           image_url: article.imageUrl,
           published_at: article.publishedAt?.toISOString() ?? null,
           is_duplicate: isDuplicate,
-        });
+        } as unknown as never);
 
         if (!insertError) {
           sourceInserted++;

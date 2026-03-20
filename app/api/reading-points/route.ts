@@ -98,7 +98,7 @@ export async function POST(request: Request) {
 
   const { data: created, error: insertError } = await serviceRoleClient
     .from('reading_points')
-    .insert(insertPayload)
+    .insert(insertPayload as unknown as never)
     .select()
     .single();
 

@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
     image_url: row.image_url,
     published_at: row.published_at,
     source_id: row.source_id,
-    source_name: (row.sources as { name: string; custom_tags: string[] } | null)?.name ?? null,
-    tags: (row.sources as { name: string; custom_tags: string[] } | null)?.custom_tags ?? [],
+    source_name: (row.sources as unknown as { name: string; custom_tags: string[] } | null)?.name ?? null,
+    tags: (row.sources as unknown as { name: string; custom_tags: string[] } | null)?.custom_tags ?? [],
   }))
 
   return Response.json({ articles })

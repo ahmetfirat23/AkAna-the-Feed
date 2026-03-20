@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   const { error } = await serviceRoleClient
     .from('click_events')
-    .insert({ article_id, source_id })
+    .insert({ article_id, source_id } as unknown as never)
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 })

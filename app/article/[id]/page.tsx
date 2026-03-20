@@ -30,7 +30,7 @@ async function getArticle(id: string): Promise<ArticleRow | null> {
     .single();
 
   if (error || !data) return null;
-  return data as ArticleRow;
+  return data as unknown as ArticleRow;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -70,15 +70,15 @@ export default async function ArticlePage({ params }: Props) {
       if (parsed.title) readerTitle = parsed.title;
 
       // Persist for next open — fire and forget
-      serviceRoleClient
-        .from('articles')
-        .update({
-          content: parsed.content,
-          content_fetched_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .then(() => {})
-        .catch(() => {});
+      void (async () => {
+        await serviceRoleClient
+          .from('articles')
+          .update({
+            content: parsed.content,
+            content_fetched_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+      })();
     } else {
       fetchFailed = true;
     }

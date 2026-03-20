@@ -19,14 +19,17 @@
     "@supabase/supabase-js": "^2.99.3",
     "@tailwindcss/typography": "^0.5.19",
     "iron-session": "^8.0.4",
-    "isomorphic-dompurify": "^3.5.1",
-    "jsdom": "^29.0.1",
+    "isomorphic-dompurify": "^1.13.0",
+    "jsdom": "^25.0.1",
     "next": "16.2.0",
     "openai": "^6.32.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "rss-parser": "^3.13.0",
     "ssrf-req-filter": "^1.1.1"
+  },
+  "overrides": {
+    "html-encoding-sniffer": "3.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

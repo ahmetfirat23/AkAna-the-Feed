@@ -99,7 +99,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await serviceRoleClient
     .from('sources')
-    .insert({ name: name.trim(), url, custom_tags: tags })
+    .insert({ name: name.trim(), url, custom_tags: tags } as unknown as never)
     .select()
     .single()
 
