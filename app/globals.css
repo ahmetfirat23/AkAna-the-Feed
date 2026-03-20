@@ -1,26 +1,213 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
+/*
+ * AkAna design tokens — Tailwind v4 CSS-first config.
+ * All color tokens reference CSS custom properties so light/dark mode
+ * can be switched by toggling the .dark class on <html>.
+ */
+
+@theme {
+  /* ─── Colors ─────────────────────────────────────────────────────── */
+  --color-bg-base:        var(--bg-base);
+  --color-bg-card:        var(--bg-card);
+  --color-bg-surface:     var(--bg-surface);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-soft:    var(--accent-soft);
+  --color-text-primary:   var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border:         var(--border);
+
+  /* ─── Typography ─────────────────────────────────────────────────── */
+  /* --font-inter and --font-lora are injected by next/font in layout.tsx */
+  --font-sans:   var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif:  var(--font-lora), ui-serif, Georgia, serif;
+  --font-mono:   ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Font sizes — named by role, not by arbitrary scale */
+  --font-size-xs:   13px;
+  --font-size-sm:   14px;
+  --font-size-base: 16px;
+  --font-size-lg:   18px;
+  --font-size-xl:   20px;
+  --font-size-2xl:  24px;
+
+  /* Line heights */
+  --line-height-ui:      1.4;
+  --line-height-reading: 1.75;
+
+  /* Max content widths */
+  --max-w-feed:   680px;
+  --max-w-reader: 720px;
+}
+
+/* ─── Light mode (default) ──────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-base:        #F7FAFA;
+  --bg-card:        #FFFFFF;
+  --bg-surface:     #EEF4F5;
+  --accent-primary: #0A7E8C;
+  --accent-soft:    #C8EAED;
+  --text-primary:   #111827;
+  --text-secondary: #5C7380;
+  --border:         #DDE8EA;
+
+  /* Reader theme variables (default theme, follows app mode) */
+  --reader-bg:   #FFFFFF;
+  --reader-text: #111827;
+  --reader-link: #0A7E8C;
+
+  /* Reader font size (controlled by useReaderSettings) */
+  --reader-font-size: 17px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Dark mode ─────────────────────────────────────────────────────── */
+.dark {
+  --bg-base:        #0B1520;
+  --bg-card:        #132033;
+  --bg-surface:     #1A2D40;
+  --accent-primary: #3BB8C8;
+  --accent-soft:    #1E4A5A;
+  --text-primary:   #E8F4F6;
+  --text-secondary: #8AA8B5;
+  --border:         #1F3347;
+
+  /* Reader theme variables (default theme, dark mode) */
+  --reader-bg:   #0B1520;
+  --reader-text: #E8F4F6;
+  --reader-link: #3BB8C8;
 }
 
+/* ─── Reader theme overrides ────────────────────────────────────────── */
+/* Applied by useReaderSettings via data-reader-theme on the article root */
+[data-reader-theme="sepia"] {
+  --reader-bg:   #F5EDD6;
+  --reader-text: #3B2F1E;
+  --reader-link: #7A5C2E;
+}
+
+[data-reader-theme="night"] {
+  --reader-bg:   #161616;
+  --reader-text: #D4D4D4;
+  --reader-link: #3BB8C8;
+}
+
+/* ─── Auto dark mode on first load (before JS runs) ────────────────── */
+/* If user has no saved preference, respect the OS setting. The layout.tsx
+   script will add/remove .dark on <html> once it reads localStorage. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not(.light) {
+    --bg-base:        #0B1520;
+    --bg-card:        #132033;
+    --bg-surface:     #1A2D40;
+    --accent-primary: #3BB8C8;
+    --accent-soft:    #1E4A5A;
+    --text-primary:   #E8F4F6;
+    --text-secondary: #8AA8B5;
+    --border:         #1F3347;
+
+    --reader-bg:   #0B1520;
+    --reader-text: #E8F4F6;
+    --reader-link: #3BB8C8;
   }
 }
 
+/* ─── Base styles ───────────────────────────────────────────────────── */
+html {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Reader content styles ─────────────────────────────────────────── */
+/* Applied inside ReaderContent component via .reader-content wrapper */
+.reader-content {
+  background-color: var(--reader-bg);
+  color: var(--reader-text);
+  font-size: var(--reader-font-size);
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+}
+
+.reader-content p {
+  margin-bottom: 1.4em;
+}
+
+.reader-content a {
+  color: var(--reader-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.reader-content h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.375;
+  margin-bottom: 1.5rem;
+}
+
+.reader-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.reader-content h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.reader-content blockquote {
+  border-left: 4px solid var(--accent-primary);
+  padding-left: 1rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin: 1.5rem 0;
+}
+
+.reader-content code {
+  background-color: var(--bg-surface);
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+.reader-content pre {
+  background-color: var(--bg-surface);
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.reader-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.reader-content img {
+  width: 100%;
+  border-radius: 6px;
+  margin: 1.5rem 0;
+}
+
+.reader-content figcaption {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
 }

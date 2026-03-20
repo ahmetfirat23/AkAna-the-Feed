@@ -18,7 +18,28 @@
       "Bash(npx:*)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"Initial scaffold + documentation:*)"
+      "Bash(git commit -m \"Initial scaffold + documentation:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh label:*)",
+      "Bash(gh issue create --title \"Phase 1a: Install dependencies & configure Tailwind design tokens\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_e973fa4a34e95b5d__ gh issue create --title \"Phase 1b: Supabase schema + lib/supabase.ts + lib/session.ts\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_e973fa4a34e95b5d__ gh issue create --title \"Phase 1c: lib/rss.ts, lib/sanitize.ts, lib/openai.ts, lib/reader.ts\" --body \"## Tasks:*)",
+      "Bash(gh issue create --title \"Phase 2a: Auth routes + /api/sources\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_ca7836179627580f__ gh issue create --title \"Phase 2b: /api/cron/refresh\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_ca7836179627580f__ gh issue create --title \"Phase 2c: /api/feed + /api/search + /api/clicks\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_ca7836179627580f__ gh issue create --title \"Phase 2d: /api/reader + /api/reading-points + /api/bookmarks\" --body \"## Tasks:*)",
+      "Bash(gh issue create --title \"Phase 3a: ArticleCard + TopicFilter + BookmarkButton components\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_6270d6888dbed4be__ gh issue create --title \"Phase 3b: FeedScroller + ReadingPointsPanel + useReadingPoints\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_6270d6888dbed4be__ gh issue create --title \"Phase 3c: ReaderContent + useReaderSettings\" --body \"## Tasks:*)",
+      "Bash(gh issue create --title \"Phase 4a: app/layout.tsx + app/page.tsx \\(main feed\\)\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_4b93e8947c494504__ gh issue create --title \"Phase 4b: app/article/[id]/page.tsx \\(reader\\)\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_4b93e8947c494504__ gh issue create --title \"Phase 4c: app/bookmarks + app/admin pages\" --body \"## Tasks:*)",
+      "Bash(__NEW_LINE_4b93e8947c494504__ gh issue create --title \"Phase 5: PWA manifest, vercel.json, .env.local.example, final polish\" --body \"## Tasks:*)",
+      "Skill(update-config)",
+      "Bash(gh issue:*)",
+      "Bash(npm install:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
