@@ -222,7 +222,18 @@ function AddSourceForm({ onAdded }: AddSourceFormProps) {
         </div>
         <div>
           <label htmlFor="source-url" className="block text-xs text-text-secondary mb-1">
-            RSS URL
+            RSS / Atom URL
+            <span className="ml-2 font-normal">
+              — for email newsletters,{" "}
+              <a
+                href="https://kill-the-newsletter.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--accent-primary)] underline underline-offset-2"
+              >
+                get a feed URL here
+              </a>
+            </span>
           </label>
           <input
             id="source-url"
