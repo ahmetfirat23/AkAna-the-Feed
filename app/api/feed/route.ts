@@ -82,9 +82,15 @@ export async function GET(request: NextRequest) {
     const scored = rows.map((row) => {
       const publishedMs = row.published_at ? new Date(row.published_at).getTime() : now
       const ageInDays = (now - publishedMs) / (1000 * 60 * 60 * 24)
-      const clickWeight = row.sources?.click_weight ?? 0
-      const score =
-        Math.exp(-ageInDays) * (1 + clickWeight * 2)
+      const clickWeight = row.sources?.click_weight ?? 1
+      // Slow recency decay (~3-day half-life) so older articles still compete.
+      const recency = Math.exp(-ageInDays * 0.3)
+      // Stable per-article jitter (0.7–1.3×) derived from article ID —
+      // breaks strict chronological order so the feed feels algorithmic,
+      // but stays consistent across page loads (no random flicker).
+      const idByte = parseInt(row.id.replace(/-/g, '').slice(-2), 16) // 0–255
+      const jitter = 0.7 + (idByte / 255) * 0.6
+      const score = clickWeight * recency * jitter
       return { row, score }
     })
 

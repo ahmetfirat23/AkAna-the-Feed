@@ -149,14 +149,15 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
 
         const data: FeedResponse = await res.json();
 
-        setArticles((prev) =>
-          nextCursor ? [...prev, ...data.articles] : data.articles,
-        );
+        setArticles((prev) => {
+          if (!nextCursor) return data.articles;
+          const seen = new Set(prev.map((a) => a.id));
+          return [...prev, ...data.articles.filter((a) => !seen.has(a.id))];
+        });
 
-        // Mark newly fetched articles as seen in the current session (For You only).
-        if (mode === 'foryou') {
-          markSeen(data.articles.map((a) => a.id));
-        }
+        // Mark all fetched articles as seen so Chronological views also hide
+        // articles in For You (user shouldn't see the same thing twice).
+        markSeen(data.articles.map((a) => a.id));
 
         setCursor(data.nextCursor);
         setHasMore(data.nextCursor !== null);
