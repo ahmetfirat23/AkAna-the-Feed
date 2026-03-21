@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import FeedScroller from './FeedScroller';
 import HomeHeader from './HomeHeader';
 
@@ -29,12 +29,14 @@ export default function FeedPage() {
         currentFeedMode={activeMode}
         currentTag={activeTag}
       />
-      <FeedScroller
-        activeMode={activeMode}
-        onModeChange={handleModeChange}
-        onTagChange={setActiveTag}
-        onCurrentArticleChange={setCurrentArticleId}
-      />
+      <Suspense>
+        <FeedScroller
+          activeMode={activeMode}
+          onModeChange={handleModeChange}
+          onTagChange={setActiveTag}
+          onCurrentArticleChange={setCurrentArticleId}
+        />
+      </Suspense>
     </>
   );
 }
