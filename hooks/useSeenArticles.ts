@@ -18,36 +18,29 @@
 //   - Returns true only when the article has been seen in 2 or more sessions that are
 //     NOT the current session. The current session's view never hides an article.
 
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 
-const SESSION_KEY = 'akana_session_id';
 const STORAGE_KEY = 'akana_seen';
 const MAX_SEEN_ENTRIES = 500;
-const HIDE_THRESHOLD = 1; // distinct OTHER sessions before an article is hidden
+const HIDE_THRESHOLD = 1; // distinct OTHER page-loads before an article is hidden
 
 // SeenMap: articleId → array of sessionIds (stored as array; Set semantics enforced in code)
 type SeenMap = Record<string, string[]>;
 
 // ---------------------------------------------------------------------------
-// Helpers (module-level, no side-effects at import time)
+// Module-level page-load session ID — changes on every page load/reload.
+// Using a module variable (not sessionStorage) means each reload = new session,
+// so articles seen in a previous visit are hidden in For You on the next load.
 // ---------------------------------------------------------------------------
 
-function getOrCreateSessionId(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    let id = sessionStorage.getItem(SESSION_KEY);
-    if (!id) {
-      // crypto.randomUUID is available in all browsers that support modern PWAs
-      id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36);
-      sessionStorage.setItem(SESSION_KEY, id);
-    }
-    return id;
-  } catch {
-    // sessionStorage unavailable (private browsing edge-cases)
-    return '';
+let _pageLoadSessionId: string | null = null;
+function getPageLoadSessionId(): string {
+  if (_pageLoadSessionId === null) {
+    _pageLoadSessionId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
+  return _pageLoadSessionId;
 }
 
 function loadSeenMap(): SeenMap {
@@ -90,15 +83,6 @@ function trimToLimit(map: SeenMap): SeenMap {
 // ---------------------------------------------------------------------------
 
 export function useSeenArticles() {
-  // sessionId is stable for the lifetime of the component tree (browser session).
-  const sessionIdRef = useRef<string | null>(null);
-
-  function getSessionId(): string {
-    if (sessionIdRef.current === null) {
-      sessionIdRef.current = getOrCreateSessionId();
-    }
-    return sessionIdRef.current;
-  }
 
   /**
    * Mark a list of article IDs as seen in the current session.
@@ -106,7 +90,7 @@ export function useSeenArticles() {
    */
   const markSeen = useCallback((articleIds: string[]): void => {
     if (articleIds.length === 0) return;
-    const sid = getSessionId();
+    const sid = getPageLoadSessionId();
     if (!sid) return; // sessionStorage unavailable — skip silently
 
     const map = loadSeenMap();
@@ -134,7 +118,7 @@ export function useSeenArticles() {
    * the current session. The current session's own views never cause hiding.
    */
   const isHidden = useCallback((articleId: string): boolean => {
-    const sid = getSessionId();
+    const sid = getPageLoadSessionId();
     const map = loadSeenMap();
     const sessions = map[articleId];
     if (!sessions || sessions.length === 0) return false;

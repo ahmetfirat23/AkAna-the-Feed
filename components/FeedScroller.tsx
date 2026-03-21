@@ -7,6 +7,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 const CHRONO_POS_KEY = 'akana_chrono_last';
+const FEED_CACHE_KEY = 'akana_feed_cache';
+const FEED_SCROLL_KEY = 'akana_feed_scroll';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+interface FeedCache {
+  mode: string;
+  tag: string | null;
+  articles: Article[];
+  cursor: string | null;
+  hasMore: boolean;
+  savedAt: number;
+}
+
+function loadFeedCache(mode: string, tag: string | null): FeedCache | null {
+  try {
+    const raw = sessionStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as FeedCache;
+    if (c.mode !== mode || c.tag !== tag) return null;
+    if (Date.now() - c.savedAt > CACHE_TTL_MS) return null;
+    return c;
+  } catch { return null; }
+}
+
+function saveFeedCache(mode: string, tag: string | null, articles: Article[], cursor: string | null, hasMore: boolean) {
+  try {
+    const c: FeedCache = { mode, tag, articles, cursor, hasMore, savedAt: Date.now() };
+    sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify(c));
+  } catch {}
+}
+
 import ArticleCard, { type Article } from './ArticleCard';
 import TopicFilter from './TopicFilter';
 import { useReadingPoints } from '@/hooks/useReadingPoints';
@@ -181,12 +212,47 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
     return () => window.removeEventListener('scroll', onScroll);
   }, [onCurrentArticleChange]);
 
+  // Save feed state to sessionStorage whenever articles change (for back-nav restore).
+  useEffect(() => {
+    if (articles.length === 0) return;
+    saveFeedCache(activeMode, activeTag, articles, cursor, hasMore);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articles]);
+
+  // Save scroll position continuously so back-nav can restore it.
+  useEffect(() => {
+    const scrollSaveRef = { current: 0 };
+    function onScroll() {
+      clearTimeout(scrollSaveRef.current);
+      scrollSaveRef.current = window.setTimeout(() => {
+        try { sessionStorage.setItem(FEED_SCROLL_KEY, String(window.scrollY)); } catch {}
+      }, 150) as unknown as number;
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   // Reset and reload when mode or tag changes.
   // Abort any in-flight fetch so switching modes is always instant.
+  const scrollRestoredRef = useRef(false);
   useEffect(() => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Try to restore from cache (back-navigation).
+    const cache = loadFeedCache(activeMode, activeTag);
+    if (cache && cache.articles.length > 0) {
+      setArticles(cache.articles);
+      setCursor(cache.cursor);
+      setHasMore(cache.hasMore);
+      isLoadingRef.current = false;
+      scrolledPastCount.current = 0;
+      lastAutoSaveCount.current = 0;
+      chronoRestoredRef.current = false;
+      scrollRestoredRef.current = false;
+      return;
+    }
 
     setArticles([]);
     setCursor(null);
@@ -195,9 +261,21 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
     scrolledPastCount.current = 0;
     lastAutoSaveCount.current = 0;
     chronoRestoredRef.current = false;
+    scrollRestoredRef.current = false;
     fetchArticles(activeMode, activeTag, null, controller.signal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMode, activeTag]);
+
+  // After restoring cached articles, scroll to saved position.
+  useEffect(() => {
+    if (scrollRestoredRef.current || articles.length === 0) return;
+    const saved = (() => { try { return sessionStorage.getItem(FEED_SCROLL_KEY); } catch { return null; } })();
+    if (!saved) return;
+    const y = parseInt(saved, 10);
+    if (!y) return;
+    scrollRestoredRef.current = true;
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
+  }, [articles]);
 
   // IntersectionObserver on sentinel to trigger infinite scroll.
   useEffect(() => {

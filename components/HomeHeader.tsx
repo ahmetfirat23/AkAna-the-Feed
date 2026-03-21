@@ -21,9 +21,15 @@ export default function HomeHeader({ activeMode, onModeChange, currentArticleId,
     <>
       <header className="sticky top-0 z-10 bg-[var(--bg-base)]/90 backdrop-blur-sm border-b border-[var(--border)]">
         <div className="max-w-[720px] mx-auto px-4 h-10 flex items-center gap-3">
-          {/* Logo */}
+          {/* Logo — tap to scroll to top */}
           <h1 className="text-sm font-semibold tracking-tight text-[var(--text-primary)] shrink-0">
-            AkAna
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-primary)] rounded-sm"
+            >
+              AkAna
+            </button>
           </h1>
 
           {/* Tab switcher */}
