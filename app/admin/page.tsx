@@ -404,6 +404,8 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/sources")
@@ -426,6 +428,27 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   function handleDeleted(id: string) {
     setSources((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  async function handleFetch() {
+    setFetching(true);
+    setFetchResult(null);
+    try {
+      const res = await fetch('/api/admin/refresh', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setFetchResult(`Done — ${data.inserted} new articles, ${data.errors} errors`);
+        // Refresh source list to show updated last_fetched_at
+        const sourcesRes = await fetch('/api/sources');
+        if (sourcesRes.ok) setSources(await sourcesRes.json());
+      } else {
+        setFetchResult(`Error: ${data.error ?? res.status}`);
+      }
+    } catch {
+      setFetchResult('Fetch failed — check connection');
+    } finally {
+      setFetching(false);
+    }
   }
 
   async function handleLogout() {
@@ -455,10 +478,22 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       </header>
 
       <main className="max-w-[760px] mx-auto px-4 py-6 flex flex-col gap-6">
-        {/* Cron note */}
-        <p className="text-xs text-text-secondary">
-          Feeds refresh automatically every 30 minutes via cron.
-        </p>
+        {/* Cron note + fetch button */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-xs text-text-secondary flex-1">
+            Feeds refresh automatically every 30 minutes via cron.
+          </p>
+          <button
+            onClick={handleFetch}
+            disabled={fetching}
+            className="shrink-0 text-xs px-3 py-1.5 rounded border border-border text-text-secondary hover:border-accent-primary hover:text-accent-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {fetching ? 'Fetching…' : 'Fetch now'}
+          </button>
+          {fetchResult && (
+            <p className="w-full text-xs text-text-secondary">{fetchResult}</p>
+          )}
+        </div>
 
         {/* Add source */}
         <AddSourceForm onAdded={handleAdded} />

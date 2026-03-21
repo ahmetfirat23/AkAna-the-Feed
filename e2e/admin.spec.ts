@@ -13,17 +13,19 @@ test.describe('Admin auth API', () => {
     let loginStatus: number | undefined;
 
     // Navigate somewhere first so we have a page context
-    await page.route('/api/feed*', async route => {
+    await page.route(/\/api\/feed/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ articles: [], nextCursor: null }) });
     });
-    await page.route('/api/sources*', async route => {
+    await page.route(/\/api\/sources/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('/api/reading-points*', async route => {
+    await page.route(/\/api\/reading-points/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const feedDone = page.waitForResponse(/\/api\/feed/);
     await page.goto('/');
+    await feedDone;
 
     const response = await page.evaluate(async () => {
       const res = await fetch('/api/auth/login', {
@@ -39,17 +41,19 @@ test.describe('Admin auth API', () => {
   });
 
   test('POST /api/auth/logout returns 200', async ({ page }) => {
-    await page.route('/api/feed*', async route => {
+    await page.route(/\/api\/feed/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ articles: [], nextCursor: null }) });
     });
-    await page.route('/api/sources*', async route => {
+    await page.route(/\/api\/sources/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('/api/reading-points*', async route => {
+    await page.route(/\/api\/reading-points/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const feedDone = page.waitForResponse(/\/api\/feed/);
     await page.goto('/');
+    await feedDone;
 
     const status = await page.evaluate(async () => {
       const res = await fetch('/api/auth/logout', { method: 'POST' });
@@ -60,10 +64,10 @@ test.describe('Admin auth API', () => {
   });
 
   test('POST /api/sources without auth cookie returns 401', async ({ page }) => {
-    await page.route('/api/feed*', async route => {
+    await page.route(/\/api\/feed/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ articles: [], nextCursor: null }) });
     });
-    await page.route('/api/sources*', async route => {
+    await page.route(/\/api\/sources/, async route => {
       // Only intercept GET, let POST through
       if (route.request().method() === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
@@ -71,11 +75,13 @@ test.describe('Admin auth API', () => {
         await route.continue();
       }
     });
-    await page.route('/api/reading-points*', async route => {
+    await page.route(/\/api\/reading-points/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const feedDone = page.waitForResponse(/\/api\/feed/);
     await page.goto('/');
+    await feedDone;
 
     const status = await page.evaluate(async () => {
       const res = await fetch('/api/sources', {

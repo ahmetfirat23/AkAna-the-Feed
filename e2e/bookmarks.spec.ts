@@ -28,7 +28,7 @@ function makeMockBookmarkRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 test.describe('Bookmarks page', () => {
   test('shows "No bookmarks yet" empty state when API returns empty array', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -36,7 +36,9 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
 
     await expect(
       page.getByText('No bookmarks yet. Tap the bookmark icon on any article to save it.'),
@@ -45,7 +47,7 @@ test.describe('Bookmarks page', () => {
 
   test('shows loading state briefly before articles render', async ({ page }) => {
     // Slow the response to catch the loading state
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await new Promise(resolve => setTimeout(resolve, 200));
       await route.fulfill({
         status: 200,
@@ -60,7 +62,7 @@ test.describe('Bookmarks page', () => {
   });
 
   test('shows error message when API returns non-200', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -68,12 +70,14 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByText(/server error 500/i)).toBeVisible();
   });
 
   test('renders bookmarked article title when bookmarks exist', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -81,12 +85,14 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByRole('heading', { name: 'My Saved Article' })).toBeVisible();
   });
 
   test('renders source name for bookmarked article', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -94,12 +100,14 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByText('Rock Paper Shotgun')).toBeVisible();
   });
 
   test('renders the article count badge in the header', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -107,46 +115,54 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
-    // BookmarksPage shows a count badge: articles.length
-    await expect(page.getByText('1')).toBeVisible();
+    await bookmarksDone;
+    // BookmarksPage shows a count badge: articles.length (scoped to header to avoid Next.js dev overlay)
+    await expect(page.getByRole('banner').getByText('1', { exact: true })).toBeVisible();
   });
 
   test('page header shows "Bookmarks" heading', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByRole('heading', { name: 'Bookmarks' })).toBeVisible();
   });
 
   test('back button is visible and has correct aria-label', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     const backButton = page.getByRole('button', { name: 'Go back' });
     await expect(backButton).toBeVisible();
   });
 
   test('back button navigates to previous page', async ({ page }) => {
     // Set up the feed page first so there is browser history
-    await page.route('/api/feed*', async route => {
+    await page.route(/\/api\/feed/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ articles: [], nextCursor: null }) });
     });
-    await page.route('/api/sources*', async route => {
+    await page.route(/\/api\/sources/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('/api/reading-points*', async route => {
+    await page.route(/\/api\/reading-points/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const feedDone = page.waitForResponse(/\/api\/feed/);
     await page.goto('/');
+    await feedDone;
     await page.goto('/bookmarks');
 
     await page.getByRole('button', { name: 'Go back' }).click();
@@ -154,7 +170,7 @@ test.describe('Bookmarks page', () => {
   });
 
   test('article title in bookmark card links to the reader page', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -165,7 +181,9 @@ test.describe('Bookmarks page', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     // The article title link in ArticleCard points to /article/[id]
     const titleLink = page.getByRole('link', { name: 'My Saved Article' });
     await expect(titleLink).toBeVisible();
@@ -173,7 +191,7 @@ test.describe('Bookmarks page', () => {
   });
 
   test('bookmark toggle on a bookmarked card removes it from the list', async ({ page }) => {
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -187,12 +205,14 @@ test.describe('Bookmarks page', () => {
       }
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByRole('heading', { name: 'My Saved Article' })).toBeVisible();
 
     // BookmarkButton: toggles bookmark state; unbookmarking removes card from list
-    // The BookmarkButton has aria-label "Remove bookmark" when active
-    const bookmarkBtn = page.getByRole('button', { name: /remove bookmark/i });
+    // The BookmarkButton has aria-label "Unsave article" when the article is bookmarked
+    const bookmarkBtn = page.getByRole('button', { name: /unsave article/i });
     await bookmarkBtn.click();
 
     // Article should disappear from the list (optimistic removal in handleBookmark)
@@ -215,7 +235,7 @@ test.describe('Bookmarks page', () => {
       },
     });
 
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -223,10 +243,12 @@ test.describe('Bookmarks page', () => {
       });
     });
 
+    const bookmarksDone = page.waitForResponse(/\/api\/bookmarks/);
     await page.goto('/bookmarks');
+    await bookmarksDone;
     await expect(page.getByRole('heading', { name: 'My Saved Article' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Second Saved Article' })).toBeVisible();
-    // Count badge should show 2
-    await expect(page.getByText('2')).toBeVisible();
+    // Count badge should show 2 (scoped to header to avoid Next.js dev overlay)
+    await expect(page.getByRole('banner').getByText('2', { exact: true })).toBeVisible();
   });
 });

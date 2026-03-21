@@ -73,7 +73,7 @@ export default function BookmarksPage() {
     <div className="min-h-screen bg-bg-base">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-bg-surface border-b border-border">
-        <div className="max-w-[620px] mx-auto px-4 h-12 flex items-center gap-3">
+        <div className="max-w-[720px] mx-auto px-4 h-12 flex items-center gap-3">
           <button
             onClick={() => router.back()}
             className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm min-w-[44px] min-h-[44px] -ml-2 px-2"
@@ -107,7 +107,7 @@ export default function BookmarksPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-[620px] mx-auto">
+      <main className="max-w-[720px] mx-auto">
         {loading && (
           <div className="flex items-center justify-center py-16 text-text-secondary text-sm">
             Loading…

@@ -20,7 +20,7 @@ test.describe('Article reader page', () => {
       });
     });
 
-    await page.route('/api/bookmarks*', async route => {
+    await page.route(/\/api\/bookmarks/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -57,21 +57,23 @@ test.describe('Article reader page', () => {
     // Since we cannot guarantee a DB row exists, we check the component
     // structure from the bookmarks page which also uses router.back().
     // This test instead verifies the behavior on the feed before navigation.
-    await page.route('/api/feed*', async route => {
+    await page.route(/\/api\/feed/, async route => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ articles: [], nextCursor: null }),
       });
     });
-    await page.route('/api/sources*', async route => {
+    await page.route(/\/api\/sources/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
-    await page.route('/api/reading-points*', async route => {
+    await page.route(/\/api\/reading-points/, async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
     });
 
+    const feedDone = page.waitForResponse(/\/api\/feed/);
     await page.goto('/');
+    await feedDone;
     // Confirm the feed page is loaded correctly before attempting reader navigation
     await expect(page.getByRole('heading', { name: 'AkAna' })).toBeVisible();
   });

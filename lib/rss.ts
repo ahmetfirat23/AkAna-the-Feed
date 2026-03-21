@@ -1,5 +1,5 @@
 import Parser from 'rss-parser';
-import { SsrfFilter } from 'ssrf-req-filter';
+import { requestFilterHandler } from 'ssrf-req-filter';
 import http from 'http';
 import https from 'https';
 
@@ -76,10 +76,9 @@ function stripHtml(html: string): string {
  * and localhost are rejected at socket level.
  */
 function buildSsrfAgents(): { httpAgent: http.Agent; httpsAgent: https.Agent } {
-  const ssrfFilter = new SsrfFilter();
   return {
-    httpAgent: ssrfFilter.buildHttpAgent(),
-    httpsAgent: ssrfFilter.buildHttpsAgent(),
+    httpAgent: requestFilterHandler(new http.Agent()) as http.Agent,
+    httpsAgent: requestFilterHandler(new https.Agent()) as https.Agent,
   };
 }
 

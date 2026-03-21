@@ -5,17 +5,17 @@ jest.mock('@/lib/supabase', () => {
     data: { id: 'bm1', article_id: 'a1', created_at: '2026-03-19T10:00:00Z' },
     error: null,
   })
-  const upsertSelectFn = jest.fn().mockReturnValue({ single: singleFn })
-  const upsertFn = jest.fn().mockReturnValue({ select: upsertSelectFn })
+  const insertSelectFn = jest.fn().mockReturnValue({ single: singleFn })
+  const insertFn = jest.fn().mockReturnValue({ select: insertSelectFn })
   const orderFn = jest.fn().mockResolvedValue({ data: [], error: null })
   const selectFn = jest.fn().mockReturnValue({ order: orderFn })
-  const fromFn = jest.fn().mockReturnValue({ select: selectFn, upsert: upsertFn })
+  const fromFn = jest.fn().mockReturnValue({ select: selectFn, insert: insertFn })
   const client = { from: fromFn }
 
   return {
     serviceRoleClient: client,
     getServerClient: jest.fn(),
-    __mocks: { singleFn, upsertSelectFn, upsertFn, orderFn, selectFn, fromFn },
+    __mocks: { singleFn, insertSelectFn, insertFn, orderFn, selectFn, fromFn },
   }
 })
 
@@ -29,8 +29,8 @@ import { getSession } from '@/lib/session'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mocks = (supabaseMod as any).__mocks as {
   singleFn: jest.Mock
-  upsertSelectFn: jest.Mock
-  upsertFn: jest.Mock
+  insertSelectFn: jest.Mock
+  insertFn: jest.Mock
   orderFn: jest.Mock
   selectFn: jest.Mock
   fromFn: jest.Mock
@@ -46,11 +46,11 @@ beforeEach(() => {
     data: { id: 'bm1', article_id: 'a1', created_at: '2026-03-19T10:00:00Z' },
     error: null,
   })
-  mocks.upsertSelectFn.mockReturnValue({ single: mocks.singleFn })
-  mocks.upsertFn.mockReturnValue({ select: mocks.upsertSelectFn })
+  mocks.insertSelectFn.mockReturnValue({ single: mocks.singleFn })
+  mocks.insertFn.mockReturnValue({ select: mocks.insertSelectFn })
   mocks.orderFn.mockResolvedValue({ data: [], error: null })
   mocks.selectFn.mockReturnValue({ order: mocks.orderFn })
-  mocks.fromFn.mockReturnValue({ select: mocks.selectFn, upsert: mocks.upsertFn })
+  mocks.fromFn.mockReturnValue({ select: mocks.selectFn, insert: mocks.insertFn })
 })
 
 describe('GET /api/bookmarks', () => {

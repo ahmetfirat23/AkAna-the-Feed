@@ -1,6 +1,6 @@
 import { Readability } from '@mozilla/readability';
 import { JSDOM } from 'jsdom';
-import { SsrfFilter } from 'ssrf-req-filter';
+import { requestFilterHandler } from 'ssrf-req-filter';
 import https from 'https';
 import http from 'http';
 import { sanitizeHtml } from './sanitize';
@@ -23,8 +23,9 @@ function fetchHtml(url: string): Promise<string | null> {
     const parsed = new URL(url);
     const isHttps = parsed.protocol === 'https:';
 
-    const ssrfFilter = new SsrfFilter();
-    const agent = isHttps ? ssrfFilter.buildHttpsAgent() : ssrfFilter.buildHttpAgent();
+    const agent = isHttps
+      ? requestFilterHandler(new https.Agent())
+      : requestFilterHandler(new http.Agent());
     const transport = isHttps ? https : http;
 
     const options: http.RequestOptions = {
