@@ -185,14 +185,15 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
   }, [activeMode, articles]);
 
   // Handle scrollTo param from reading points navigation.
-  const scrollToRestoredRef = useRef(false);
+  // Track the last scrollTo we processed so clicking the same point twice still works.
+  const lastScrollToRef = useRef<string | null>(null);
   useEffect(() => {
-    if (scrollToRestoredRef.current || articles.length === 0) return;
     const scrollTo = searchParams.get('scrollTo');
-    if (!scrollTo) return;
+    if (!scrollTo || articles.length === 0) return;
+    if (scrollTo === lastScrollToRef.current) return;
     const el = articleRefs.current.get(scrollTo);
     if (el) {
-      scrollToRestoredRef.current = true;
+      lastScrollToRef.current = scrollTo;
       el.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
   }, [articles, searchParams]);
