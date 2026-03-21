@@ -1,5 +1,4 @@
 import { serviceRoleClient } from '@/lib/supabase';
-import { getSession } from '@/lib/session';
 
 export async function GET() {
   const { data, error } = await serviceRoleClient
@@ -35,11 +34,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session.isAdmin) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
   let body: { article_id?: string };
   try {
     body = await request.json();

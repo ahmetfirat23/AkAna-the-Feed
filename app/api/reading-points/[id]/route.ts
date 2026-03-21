@@ -1,15 +1,9 @@
 import { serviceRoleClient } from '@/lib/supabase';
-import { getSession } from '@/lib/session';
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session.isAdmin) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
   const { id } = await params;
 
   const { error } = await serviceRoleClient

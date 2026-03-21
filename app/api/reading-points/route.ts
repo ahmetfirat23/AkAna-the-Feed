@@ -1,5 +1,4 @@
 import { serviceRoleClient } from '@/lib/supabase';
-import { getSession } from '@/lib/session';
 
 const MAX_AUTO = 3;
 const MAX_MANUAL = 5;
@@ -18,11 +17,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session.isAdmin) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-
   let body: {
     article_id?: string;
     label?: string;
