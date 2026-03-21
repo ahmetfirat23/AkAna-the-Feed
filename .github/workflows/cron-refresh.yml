@@ -1,0 +1,18 @@
+name: Refresh RSS feeds
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # allow manual trigger from GitHub Actions UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger feed refresh
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/refresh" \
+          | grep -q "^2" || exit 1

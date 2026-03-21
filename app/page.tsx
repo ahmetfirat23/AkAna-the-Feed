@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import FeedScroller from '@/components/FeedScroller';
-import HomeHeader from '@/components/HomeHeader';
+import FeedPage from '@/components/FeedPage';
 
 export const metadata: Metadata = {
   title: 'AkAna',
@@ -10,8 +9,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-[var(--bg-base)]">
-      <HomeHeader />
-      <FeedScroller />
+      <FeedPage />
     </main>
   );
 }

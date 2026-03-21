@@ -4,14 +4,21 @@
 // filtering, and auto reading-point saves every 10 articles scrolled past.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+const CHRONO_POS_KEY = 'akana_chrono_last';
 import ArticleCard, { type Article } from './ArticleCard';
 import TopicFilter from './TopicFilter';
 import { useReadingPoints } from '@/hooks/useReadingPoints';
+import { useSeenArticles } from '@/hooks/useSeenArticles';
 
 type FeedMode = 'foryou' | 'chronological';
 
 interface FeedScrollerProps {
-  initialMode?: FeedMode;
+  activeMode: FeedMode;
+  onModeChange: (mode: FeedMode) => void;
+  onTagChange?: (tag: string | null) => void;
+  onCurrentArticleChange?: (articleId: string | null) => void;
 }
 
 interface FeedResponse {
@@ -19,14 +26,8 @@ interface FeedResponse {
   nextCursor: string | null;
 }
 
-const FEED_MODE_KEY = 'akana_feed_mode';
-
-export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerProps) {
-  // Persist active mode in localStorage.
-  const [activeMode, setActiveMode] = useState<FeedMode>(() => {
-    if (typeof window === 'undefined') return initialMode;
-    return (localStorage.getItem(FEED_MODE_KEY) as FeedMode) ?? initialMode;
-  });
+export default function FeedScroller({ activeMode, onModeChange: _onModeChange, onTagChange, onCurrentArticleChange }: FeedScrollerProps) {
+  const searchParams = useSearchParams();
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
 
@@ -41,8 +42,38 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
   const lastAutoSaveCount = useRef(0);
   const articleRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // Ref-based loading flag so fetchArticles never reads stale closure state.
+  const isLoadingRef = useRef(false);
+  // AbortController so switching modes cancels any in-flight fetch immediately.
+  const abortRef = useRef<AbortController | null>(null);
 
   const { savePoint } = useReadingPoints();
+  const { markSeen, isHidden } = useSeenArticles();
+
+  // Chronological position: save topmost visible article to localStorage on scroll.
+  const chronoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveChronoPosition = useCallback(() => {
+    if (activeMode !== 'chronological') return;
+    const id = findTopmostVisibleArticle(articleRefs.current);
+    if (id) {
+      try { localStorage.setItem(CHRONO_POS_KEY, id); } catch {}
+    }
+  }, [activeMode]);
+
+  useEffect(() => {
+    if (activeMode !== 'chronological') return;
+    function onScroll() {
+      if (chronoSaveRef.current) clearTimeout(chronoSaveRef.current);
+      chronoSaveRef.current = setTimeout(saveChronoPosition, 300);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('beforeunload', saveChronoPosition);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('beforeunload', saveChronoPosition);
+      saveChronoPosition(); // save on mode switch / unmount
+    };
+  }, [activeMode, saveChronoPosition]);
 
   // Fetch available tags from sources (for TopicFilter).
   useEffect(() => {
@@ -66,9 +97,14 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
   }, []);
 
   // Core fetch function. Appends to existing articles if cursor is set.
+  // Uses isLoadingRef (not state) so mode switches never read stale values.
   const fetchArticles = useCallback(
-    async (mode: FeedMode, tag: string | null, nextCursor: string | null) => {
-      if (isLoading) return;
+    async (mode: FeedMode, tag: string | null, nextCursor: string | null, signal?: AbortSignal) => {
+      // For infinite scroll: skip if already loading. For mode/tag resets the
+      // caller aborts the previous request and passes a fresh signal instead.
+      if (!signal && isLoadingRef.current) return;
+
+      isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
 
@@ -77,7 +113,7 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
         if (tag) params.set('tag', tag);
         if (nextCursor) params.set('cursor', nextCursor);
 
-        const res = await fetch(`/api/feed?${params}`);
+        const res = await fetch(`/api/feed?${params}`, { signal });
         if (!res.ok) throw new Error('Could not load feed — check your connection.');
 
         const data: FeedResponse = await res.json();
@@ -85,25 +121,81 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
         setArticles((prev) =>
           nextCursor ? [...prev, ...data.articles] : data.articles,
         );
+
+        // Mark newly fetched articles as seen in the current session (For You only).
+        if (mode === 'foryou') {
+          markSeen(data.articles.map((a) => a.id));
+        }
+
         setCursor(data.nextCursor);
         setHasMore(data.nextCursor !== null);
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
         setError(err instanceof Error ? err.message : 'Could not load feed.');
       } finally {
+        isLoadingRef.current = false;
         setIsLoading(false);
       }
     },
-    [isLoading],
+    [markSeen],
   );
 
-  // Reset and reload when mode or tag changes.
+  // After chronological articles load, scroll back to saved position.
+  const chronoRestoredRef = useRef(false);
   useEffect(() => {
+    if (activeMode !== 'chronological' || chronoRestoredRef.current || articles.length === 0) return;
+    const savedId = (() => { try { return localStorage.getItem(CHRONO_POS_KEY); } catch { return null; } })();
+    if (!savedId) return;
+    const el = articleRefs.current.get(savedId);
+    if (el) {
+      chronoRestoredRef.current = true;
+      el.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }, [activeMode, articles]);
+
+  // Handle scrollTo param from reading points navigation.
+  const scrollToRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollToRestoredRef.current || articles.length === 0) return;
+    const scrollTo = searchParams.get('scrollTo');
+    if (!scrollTo) return;
+    const el = articleRefs.current.get(scrollTo);
+    if (el) {
+      scrollToRestoredRef.current = true;
+      el.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }, [articles, searchParams]);
+
+  // Report topmost visible article to parent for reading point saving.
+  useEffect(() => {
+    if (!onCurrentArticleChange || articles.length === 0) return;
+    onCurrentArticleChange(findTopmostVisibleArticle(articleRefs.current));
+  }, [articles, onCurrentArticleChange]);
+
+  useEffect(() => {
+    if (!onCurrentArticleChange) return;
+    function onScroll() {
+      onCurrentArticleChange?.(findTopmostVisibleArticle(articleRefs.current));
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [onCurrentArticleChange]);
+
+  // Reset and reload when mode or tag changes.
+  // Abort any in-flight fetch so switching modes is always instant.
+  useEffect(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setArticles([]);
     setCursor(null);
     setHasMore(true);
+    isLoadingRef.current = false;
     scrolledPastCount.current = 0;
     lastAutoSaveCount.current = 0;
-    fetchArticles(activeMode, activeTag, null);
+    chronoRestoredRef.current = false;
+    fetchArticles(activeMode, activeTag, null, controller.signal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMode, activeTag]);
 
@@ -175,48 +267,22 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
     return () => observer.disconnect();
   }, [articles, activeMode, activeTag, savePoint]);
 
-  function handleModeChange(mode: FeedMode) {
-    if (mode === activeMode) return;
-    localStorage.setItem(FEED_MODE_KEY, mode);
-    setActiveMode(mode);
-  }
-
   function handleTagChange(tag: string | null) {
     setActiveTag(tag);
+    onTagChange?.(tag);
   }
 
   function handleBookmark(_id: string, _bookmarked: boolean) {
     // BookmarkButton manages its own state; no action needed here.
   }
 
-  return (
-    <div className="w-full max-w-[620px] mx-auto">
-      {/* Tab switcher */}
-      <div className="flex border-b border-border bg-bg-card sticky top-0 z-10">
-        <button
-          type="button"
-          onClick={() => handleModeChange('foryou')}
-          className={`flex-1 py-3 text-sm font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-primary ${
-            activeMode === 'foryou'
-              ? 'text-accent-primary border-b-2 border-accent-primary'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          For You
-        </button>
-        <button
-          type="button"
-          onClick={() => handleModeChange('chronological')}
-          className={`flex-1 py-3 text-sm font-semibold transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-primary ${
-            activeMode === 'chronological'
-              ? 'text-accent-primary border-b-2 border-accent-primary'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          Chronological
-        </button>
-      </div>
+  // In For You mode, hide articles the user has already seen in 2+ other sessions.
+  // Chronological mode shows everything as-is.
+  const visibleArticles =
+    activeMode === 'foryou' ? articles.filter((a) => !isHidden(a.id)) : articles;
 
+  return (
+    <div className="w-full max-w-[720px] mx-auto">
       {/* Topic filter chips */}
       {availableTags.length > 0 && (
         <TopicFilter
@@ -228,7 +294,7 @@ export default function FeedScroller({ initialMode = 'foryou' }: FeedScrollerPro
 
       {/* Article list */}
       <div>
-        {articles.map((article) => (
+        {visibleArticles.map((article) => (
           <div
             key={article.id}
             ref={(el) => {

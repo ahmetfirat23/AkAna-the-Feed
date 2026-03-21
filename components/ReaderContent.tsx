@@ -1,6 +1,6 @@
 'use client';
 
-import { useReaderSettings } from '@/hooks/useReaderSettings';
+import { useReaderSettings, ReaderSettingsProvider } from '@/hooks/useReaderSettings';
 import { ReaderToolbar } from '@/components/ReaderToolbar';
 
 interface ReaderContentProps {
@@ -23,7 +23,7 @@ function formatDate(dateString: string): string {
   }
 }
 
-export function ReaderContent({
+function ReaderContentInner({
   content,
   title,
   byline,
@@ -35,9 +35,8 @@ export function ReaderContent({
   return (
     <>
       <div
-        className={`reader-content max-w-[720px] mx-auto px-4 pb-24 ${
-          settings.fontFamily === 'serif' ? 'font-serif' : 'font-sans'
-        }`}
+        className="reader-content max-w-[720px] mx-auto px-4 pb-24"
+        style={{ fontFamily: settings.fontFamily === 'serif' ? 'var(--font-serif)' : 'var(--font-sans)' }}
       >
         {/* Article header */}
         <header className="pt-8 pb-6">
@@ -63,5 +62,13 @@ export function ReaderContent({
 
       <ReaderToolbar />
     </>
+  );
+}
+
+export function ReaderContent(props: ReaderContentProps) {
+  return (
+    <ReaderSettingsProvider>
+      <ReaderContentInner {...props} />
+    </ReaderSettingsProvider>
   );
 }

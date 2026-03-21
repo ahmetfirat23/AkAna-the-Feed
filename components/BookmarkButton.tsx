@@ -33,7 +33,7 @@ export default function BookmarkButton({
         const res = await fetch("/api/bookmarks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articleId }),
+          body: JSON.stringify({ article_id: articleId }),
         });
         if (!res.ok) throw new Error("Failed to save bookmark");
       } else {
