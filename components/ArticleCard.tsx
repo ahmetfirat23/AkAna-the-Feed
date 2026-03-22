@@ -157,23 +157,37 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
 
   return (
     <article className="mb-2 border border-border bg-bg-card hover:bg-bg-surface transition-colors duration-150 md:hover:-translate-y-px md:hover:shadow-md md:transition-[background-color,transform,box-shadow] md:duration-150">
-      {/* Article image — full-width above the text block */}
+      {/* Article image — full-width above the text block, tags overlaid top-left */}
       {article.image_url && (
-        <Link
-          href={`/article/${article.id}`}
-          tabIndex={-1}
-          aria-hidden="true"
-          className="block w-full h-36 relative overflow-hidden bg-bg-surface"
-        >
-          <Image
-            src={article.image_url}
-            alt=""
-            fill
-            sizes="(max-width: 680px) 100vw, 680px"
-            className="object-contain"
-            unoptimized
-          />
-        </Link>
+        <div className="relative w-full h-36 bg-bg-surface overflow-hidden">
+          <Link
+            href={`/article/${article.id}`}
+            tabIndex={-1}
+            aria-hidden="true"
+            className="block w-full h-full"
+          >
+            <Image
+              src={article.image_url}
+              alt=""
+              fill
+              sizes="(max-width: 680px) 100vw, 680px"
+              className="object-contain"
+              unoptimized
+            />
+          </Link>
+          {article.tags.length > 0 && (
+            <div className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none">
+              {article.tags.slice(0, 3).map((tag) => (
+                <span
+                  key={tag}
+                  className="bg-accent-soft text-accent-primary text-xs font-medium px-2 py-0.5 rounded-full w-fit"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="px-3 py-2">
@@ -226,24 +240,11 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
 
         {/* Description / summary snippet */}
         {snippet && (
-          <p className="text-sm leading-relaxed text-text-secondary line-clamp-3 mb-2">
+          <p className="text-sm leading-relaxed text-text-secondary line-clamp-3">
             {snippet}
           </p>
         )}
 
-        {/* Tags — below snippet, no layout impact on header row */}
-        {article.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {article.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="bg-accent-soft text-accent-primary text-xs font-medium px-2 py-0.5 rounded-full"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     </article>
   );
