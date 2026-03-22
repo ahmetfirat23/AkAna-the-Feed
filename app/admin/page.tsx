@@ -12,6 +12,8 @@ interface Source {
   last_error: string | null;
   consecutive_errors: number;
   created_at: string;
+  like_count?: number;
+  dislike_count?: number;
 }
 
 /** Returns a health indicator based on consecutive_errors and last_fetched_at */
@@ -377,6 +379,12 @@ function SourceRow({
                 : `Last error: ${source.last_error}`}
             </span>
           )}
+          {((source.like_count ?? 0) > 0 || (source.dislike_count ?? 0) > 0) && (
+            <span className="text-xs text-text-secondary flex items-center gap-2">
+              <span title="Likes">♥ {source.like_count ?? 0}</span>
+              <span title="Dislikes">↓ {source.dislike_count ?? 0}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -408,12 +416,27 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   const [fetchResult, setFetchResult] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/sources")
-      .then((res) => {
+    Promise.all([
+      fetch("/api/sources").then((res) => {
         if (!res.ok) throw new Error(`Server error ${res.status}`);
-        return res.json();
+        return res.json() as Promise<Source[]>;
+      }),
+      fetch("/api/admin/source-stats").then((res) =>
+        res.ok ? res.json() as Promise<{ source_id: string; like_count: number; dislike_count: number }[]> : []
+      ).catch(() => []),
+    ])
+      .then(([sourcesData, stats]) => {
+        const statsMap = new Map(
+          (stats as { source_id: string; like_count: number; dislike_count: number }[]).map(
+            (s) => [s.source_id, s]
+          )
+        );
+        const merged = sourcesData.map((src) => {
+          const s = statsMap.get(src.id);
+          return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0 };
+        });
+        setSources(merged);
       })
-      .then((data: Source[]) => setSources(data))
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Couldn't load sources.");
       })
@@ -438,9 +461,23 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
       const data = await res.json();
       if (res.ok) {
         setFetchResult(`Done — ${data.inserted} new articles, ${data.errors} errors`);
-        // Refresh source list to show updated last_fetched_at
-        const sourcesRes = await fetch('/api/sources');
-        if (sourcesRes.ok) setSources(await sourcesRes.json());
+        // Refresh source list and stats
+        const [sourcesRes, statsRes] = await Promise.all([
+          fetch('/api/sources'),
+          fetch('/api/admin/source-stats'),
+        ]);
+        if (sourcesRes.ok) {
+          const sourcesData: Source[] = await sourcesRes.json();
+          const statsData: { source_id: string; like_count: number; dislike_count: number }[] =
+            statsRes.ok ? await statsRes.json() : [];
+          const statsMap = new Map(statsData.map((s) => [s.source_id, s]));
+          setSources(
+            sourcesData.map((src) => {
+              const s = statsMap.get(src.id);
+              return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0 };
+            })
+          );
+        }
       } else {
         setFetchResult(`Error: ${data.error ?? res.status}`);
       }

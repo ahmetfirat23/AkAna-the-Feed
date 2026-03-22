@@ -254,6 +254,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { data: clickCounts } = await supabase
       .from('click_events')
       .select('source_id')
+      .eq('type', 'like')
       .gte('clicked_at', sevenDaysAgo);
 
     // Count clicks per source

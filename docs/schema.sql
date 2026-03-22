@@ -40,8 +40,12 @@ CREATE TABLE click_events (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   article_id  UUID        NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
   source_id   UUID        NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  type        TEXT        NOT NULL DEFAULT 'like' CHECK (type IN ('like', 'dislike')),
   clicked_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migration for existing databases (run this if the table already exists):
+-- ALTER TABLE click_events ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'like' CHECK (type IN ('like', 'dislike'));
 
 -- Reading points (synced across devices)
 CREATE TABLE reading_points (

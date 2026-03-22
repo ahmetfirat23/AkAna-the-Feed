@@ -20,94 +20,108 @@ export interface Article {
 }
 
 const LIKED_KEY = "akana_liked";
+const DISLIKED_KEY = "akana_disliked";
 
-function getLikedMap(): Record<string, boolean> {
+function getMap(key: string): Record<string, boolean> {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(localStorage.getItem(LIKED_KEY) ?? "{}");
+    return JSON.parse(localStorage.getItem(key) ?? "{}");
   } catch {
     return {};
   }
 }
 
-function setLikedMap(map: Record<string, boolean>) {
-  localStorage.setItem(LIKED_KEY, JSON.stringify(map));
+function setMap(key: string, map: Record<string, boolean>) {
+  localStorage.setItem(key, JSON.stringify(map));
 }
 
-interface LikeButtonProps {
+interface ReactionButtonsProps {
   articleId: string;
   sourceId?: string;
 }
 
-function LikeButton({ articleId, sourceId }: LikeButtonProps) {
-  const [liked, setLiked] = useState<boolean>(() => {
-    return Boolean(getLikedMap()[articleId]);
+function ReactionButtons({ articleId, sourceId }: ReactionButtonsProps) {
+  const [reaction, setReaction] = useState<"like" | "dislike" | null>(() => {
+    if (getMap(LIKED_KEY)[articleId]) return "like";
+    if (getMap(DISLIKED_KEY)[articleId]) return "dislike";
+    return null;
   });
 
-  async function handleClick(e: React.MouseEvent) {
+  async function handleReaction(type: "like" | "dislike", e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
 
-    const next = !liked;
-    setLiked(next);
+    const next = reaction === type ? null : type;
+    setReaction(next);
 
-    const map = getLikedMap();
-    if (next) {
-      map[articleId] = true;
+    const likedMap = getMap(LIKED_KEY);
+    const dislikedMap = getMap(DISLIKED_KEY);
+
+    if (next === "like") {
+      likedMap[articleId] = true;
+      delete dislikedMap[articleId];
+    } else if (next === "dislike") {
+      dislikedMap[articleId] = true;
+      delete likedMap[articleId];
     } else {
-      delete map[articleId];
+      delete likedMap[articleId];
+      delete dislikedMap[articleId];
     }
-    setLikedMap(map);
 
-    if (next) {
+    setMap(LIKED_KEY, likedMap);
+    setMap(DISLIKED_KEY, dislikedMap);
+
+    if (next !== null) {
       try {
         await fetch("/api/clicks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ article_id: articleId, source_id: sourceId }),
+          body: JSON.stringify({ article_id: articleId, source_id: sourceId, type: next }),
         });
       } catch {
-        // Non-fatal — click weight update is best-effort.
+        // Non-fatal
       }
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      aria-label={liked ? "Unlike article" : "Like article"}
-      className="flex items-center justify-center w-8 h-8 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm text-text-secondary hover:text-rose-500"
-    >
-      {liked ? (
-        // Filled heart
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          aria-hidden="true"
-          className="text-rose-500"
-        >
-          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-        </svg>
-      ) : (
-        // Outline heart
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-        </svg>
-      )}
-    </button>
+    <>
+      {/* Like */}
+      <button
+        type="button"
+        onClick={(e) => handleReaction("like", e)}
+        aria-label={reaction === "like" ? "Unlike article" : "Like article"}
+        className="flex items-center justify-center w-8 h-8 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm text-text-secondary hover:text-rose-500"
+      >
+        {reaction === "like" ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="text-rose-500">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+        )}
+      </button>
+
+      {/* Dislike */}
+      <button
+        type="button"
+        onClick={(e) => handleReaction("dislike", e)}
+        aria-label={reaction === "dislike" ? "Remove dislike" : "Dislike article"}
+        className="flex items-center justify-center w-8 h-8 transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm text-text-secondary hover:text-text-primary"
+      >
+        {reaction === "dislike" ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17" />
+          </svg>
+        )}
+      </button>
+    </>
   );
 }
 
@@ -143,7 +157,7 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
 
   return (
     <article className="mb-2 border border-border bg-bg-card hover:bg-bg-surface transition-colors duration-150 md:hover:-translate-y-px md:hover:shadow-md md:transition-[background-color,transform,box-shadow] md:duration-150">
-      {/* Article image — full-width above the text block, no inlining */}
+      {/* Article image — full-width above the text block */}
       {article.image_url && (
         <Link
           href={`/article/${article.id}`}
@@ -163,53 +177,35 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
       )}
 
       <div className="px-3 py-2">
-        {/* Source + timestamp + tags + external link */}
-        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          <span className="text-xs font-medium text-text-secondary">
-            {article.source_name}
-          </span>
-          <span className="text-xs text-text-secondary" aria-hidden="true">
-            ·
-          </span>
-          <time
-            dateTime={article.published_at}
-            className="text-xs text-text-secondary"
-          >
-            {timeAgo(article.published_at)}
-          </time>
-          {article.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="bg-accent-soft text-accent-primary text-xs font-medium px-2 py-0.5 rounded-full"
-            >
-              {tag}
+        {/* Single row: source+time on left (truncated), buttons on right (fixed) */}
+        <div className="flex items-center gap-1.5 mb-2">
+          {/* Left: source · time + external link — shrinks and truncates */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+            <span className="text-xs font-medium text-text-secondary truncate shrink-0 max-w-[120px]">
+              {article.source_name}
             </span>
-          ))}
-          <a
-            href={article.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open original article from ${article.source_name} in new tab`}
-            className="ml-1 inline-flex items-center text-text-secondary hover:text-accent-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm"
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
+            <span className="text-xs text-text-secondary shrink-0" aria-hidden="true">·</span>
+            <time dateTime={article.published_at} className="text-xs text-text-secondary shrink-0 whitespace-nowrap">
+              {timeAgo(article.published_at)}
+            </time>
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open original article from ${article.source_name} in new tab`}
+              className="shrink-0 inline-flex items-center text-text-secondary hover:text-accent-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm"
             >
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-          </a>
-          <div className="ml-auto flex items-center gap-0.5 -my-1">
-            <LikeButton articleId={article.id} sourceId={article.source_id} />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+          </div>
+
+          {/* Right: reaction + bookmark buttons — never shrinks */}
+          <div className="flex items-center gap-0.5 shrink-0 -my-1">
+            <ReactionButtons articleId={article.id} sourceId={article.source_id} />
             <BookmarkButton
               articleId={article.id}
               isBookmarked={bookmarked}
@@ -230,11 +226,24 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
 
         {/* Description / summary snippet */}
         {snippet && (
-          <p className="text-sm leading-relaxed text-text-secondary line-clamp-3 mb-3">
+          <p className="text-sm leading-relaxed text-text-secondary line-clamp-3 mb-2">
             {snippet}
           </p>
         )}
 
+        {/* Tags — below snippet, no layout impact on header row */}
+        {article.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {article.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="bg-accent-soft text-accent-primary text-xs font-medium px-2 py-0.5 rounded-full"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   );
