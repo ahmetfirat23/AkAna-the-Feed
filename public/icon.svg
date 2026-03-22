@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="80" fill="#0A7E8C"/>
-  <text x="256" y="340" font-family="system-ui" font-size="280" font-weight="700" fill="white" text-anchor="middle">A</text>
+  <rect width="512" height="512" rx="96" fill="#0A7E8C"/>
+  <!-- large centered droplet -->
+  <path d="M 256 80 C 332 136 390 214 390 318 A 134 134 0 0 1 122 318 C 122 214 180 136 256 80 Z" fill="white"/>
+  <!-- three feed lines (teal = negative space inside droplet), left-aligned -->
+  <rect x="170" y="242" width="176" height="34" rx="5" fill="#0A7E8C"/>
+  <rect x="170" y="288" width="136" height="34" rx="5" fill="#0A7E8C"/>
+  <rect x="170" y="334" width="96"  height="34" rx="5" fill="#0A7E8C"/>
 </svg>
