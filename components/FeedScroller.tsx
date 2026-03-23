@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 const CHRONO_POS_KEY = 'akana_chrono_last';
+const FORYOU_POS_KEY = 'akana_foryou_last';
 const FEED_CACHE_KEY = 'akana_feed_cache';
-const FEED_SCROLL_KEY = 'akana_feed_scroll';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 interface FeedCache {
@@ -81,30 +81,35 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
   const { savePoint } = useReadingPoints();
   const { markSeen, isHidden } = useSeenArticles();
 
-  // Chronological position: save topmost visible article to localStorage on scroll.
-  const chronoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveChronoPosition = useCallback(() => {
-    if (activeMode !== 'chronological') return;
+  // Save topmost visible article ID on scroll for both modes.
+  // Chronological uses localStorage (persistent across sessions for position restore).
+  // For You uses sessionStorage (only needed within the same browser session).
+  const posSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveScrollPosition = useCallback(() => {
     const id = findTopmostVisibleArticle(articleRefs.current);
-    if (id) {
-      try { localStorage.setItem(CHRONO_POS_KEY, id); } catch {}
-    }
+    if (!id) return;
+    try {
+      if (activeMode === 'chronological') {
+        localStorage.setItem(CHRONO_POS_KEY, id);
+      } else {
+        sessionStorage.setItem(FORYOU_POS_KEY, id);
+      }
+    } catch {}
   }, [activeMode]);
 
   useEffect(() => {
-    if (activeMode !== 'chronological') return;
     function onScroll() {
-      if (chronoSaveRef.current) clearTimeout(chronoSaveRef.current);
-      chronoSaveRef.current = setTimeout(saveChronoPosition, 300);
+      if (posSaveTimerRef.current) clearTimeout(posSaveTimerRef.current);
+      posSaveTimerRef.current = setTimeout(saveScrollPosition, 300);
     }
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('beforeunload', saveChronoPosition);
+    window.addEventListener('beforeunload', saveScrollPosition);
     return () => {
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('beforeunload', saveChronoPosition);
-      saveChronoPosition(); // save on mode switch / unmount
+      window.removeEventListener('beforeunload', saveScrollPosition);
+      saveScrollPosition(); // save immediately on mode switch / unmount
     };
-  }, [activeMode, saveChronoPosition]);
+  }, [saveScrollPosition]);
 
   // Fetch available tags from sources (for TopicFilter).
   useEffect(() => {
@@ -172,15 +177,22 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
     [markSeen],
   );
 
-  // After chronological articles load, scroll back to saved position.
-  const chronoRestoredRef = useRef(false);
+  // After articles are restored from cache (back-navigation), scroll to where the
+  // user was. Both modes use article-ID scroll so it works regardless of image load
+  // timing or exact pixel layout.
+  const posRestoredRef = useRef(false);
   useEffect(() => {
-    if (activeMode !== 'chronological' || chronoRestoredRef.current || articles.length === 0) return;
-    const savedId = (() => { try { return localStorage.getItem(CHRONO_POS_KEY); } catch { return null; } })();
+    if (posRestoredRef.current || articles.length === 0) return;
+    let savedId: string | null = null;
+    try {
+      savedId = activeMode === 'chronological'
+        ? localStorage.getItem(CHRONO_POS_KEY)
+        : sessionStorage.getItem(FORYOU_POS_KEY);
+    } catch {}
     if (!savedId) return;
     const el = articleRefs.current.get(savedId);
     if (el) {
-      chronoRestoredRef.current = true;
+      posRestoredRef.current = true;
       el.scrollIntoView({ block: 'start', behavior: 'instant' });
     }
   }, [activeMode, articles]);
@@ -221,22 +233,9 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [articles]);
 
-  // Save scroll position continuously so back-nav can restore it.
-  useEffect(() => {
-    const scrollSaveRef = { current: 0 };
-    function onScroll() {
-      clearTimeout(scrollSaveRef.current);
-      scrollSaveRef.current = window.setTimeout(() => {
-        try { sessionStorage.setItem(FEED_SCROLL_KEY, String(window.scrollY)); } catch {}
-      }, 150) as unknown as number;
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
   // Reset and reload when mode or tag changes.
   // Abort any in-flight fetch so switching modes is always instant.
-  const scrollRestoredRef = useRef(false);
   useEffect(() => {
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -251,8 +250,7 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
       isLoadingRef.current = false;
       scrolledPastCount.current = 0;
       lastAutoSaveCount.current = 0;
-      chronoRestoredRef.current = false;
-      scrollRestoredRef.current = false;
+      posRestoredRef.current = false;
       return;
     }
 
@@ -262,22 +260,10 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
     isLoadingRef.current = false;
     scrolledPastCount.current = 0;
     lastAutoSaveCount.current = 0;
-    chronoRestoredRef.current = false;
-    scrollRestoredRef.current = false;
+    posRestoredRef.current = false;
     fetchArticles(activeMode, activeTag, null, controller.signal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMode, activeTag]);
-
-  // After restoring cached articles, scroll to saved position.
-  useEffect(() => {
-    if (scrollRestoredRef.current || articles.length === 0) return;
-    const saved = (() => { try { return sessionStorage.getItem(FEED_SCROLL_KEY); } catch { return null; } })();
-    if (!saved) return;
-    const y = parseInt(saved, 10);
-    if (!y) return;
-    scrollRestoredRef.current = true;
-    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' }));
-  }, [articles]);
 
   // IntersectionObserver on sentinel to trigger infinite scroll.
   useEffect(() => {

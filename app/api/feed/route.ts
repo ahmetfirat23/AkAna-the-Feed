@@ -140,22 +140,31 @@ export async function GET(request: NextRequest) {
     scored.sort((a, b) => b.score - a.score)
 
     // Per-source diversity cap: no single source takes more than SOURCE_CAP
-    // slots per page, preventing high-volume sources from crowding out others.
-    // Articles scoring below 0.01 are dropped — they are effectively invisible
-    // (recency decay and no engagement signal) and add noise to the end of the feed.
+    // slots in the *first* portion of the feed, so high-volume sources can't
+    // crowd out every slot on page 1–2.
+    // Articles scoring below 0.01 are dropped (stale, no signal).
+    // After the capped pool is exhausted, the remaining scored articles follow
+    // (no cap) so the feed keeps going rather than hitting "end of feed" early.
     const sourceCounts = new Map<string, number>()
     const diversified: typeof scored = []
+    const diversifiedIds = new Set<string>()
+
     for (const item of scored) {
       if (item.score < 0.01) continue
       const count = sourceCounts.get(item.row.source_id) ?? 0
       if (count < SOURCE_CAP) {
         diversified.push(item)
+        diversifiedIds.add(item.row.id)
         sourceCounts.set(item.row.source_id, count + 1)
       }
     }
 
-    const page = diversified.slice(offset, offset + limit)
-    const hasMore = offset + limit < diversified.length
+    // Overflow: scored articles that didn't make the cap, in score order
+    const overflow = scored.filter(item => item.score >= 0.01 && !diversifiedIds.has(item.row.id))
+    const fullPool = [...diversified, ...overflow]
+
+    const page = fullPool.slice(offset, offset + limit)
+    const hasMore = offset + limit < fullPool.length
 
     return Response.json({
       articles: page.map(({ row }) => toArticleShape(row)),
