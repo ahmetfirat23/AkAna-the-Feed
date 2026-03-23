@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Single articles query — filter unseen via index, cap at 30 days (1 query)
-    const { data: articlesRaw } = await supabase
+    const { data: articlesRaw, error: articlesError } = await supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('is_duplicate', false)
@@ -122,6 +122,9 @@ export async function GET(request: NextRequest) {
       .gte('published_at', thirtyDaysAgo)
       .order('published_at', { ascending: false })
       .limit(300)
+    if (articlesError) {
+      return Response.json({ error: articlesError.message }, { status: 500 })
+    }
     const allRows = (articlesRaw ?? []) as unknown as ArticleRow[]
 
     // Tag filter
