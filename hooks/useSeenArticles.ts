@@ -91,6 +91,11 @@ function trimToLimit(map: SeenMap): SeenMap {
 // Hook
 // ---------------------------------------------------------------------------
 
+/** Returns all article IDs currently in the seen map (for server-side exclusion). */
+export function getSeenIds(): string[] {
+  return Object.keys(loadSeenMap())
+}
+
 export function useSeenArticles() {
 
   /**

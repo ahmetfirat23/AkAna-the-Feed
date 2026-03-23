@@ -35,7 +35,6 @@ const ARTICLE_SELECT = `
 `
 
 // foryou tuning constants
-const BATCH_SIZE = 25           // articles fetched per source per page
 const DAY_MS = 1000 * 60 * 60 * 24
 const USER_INTEREST_ALPHA = 0.5 // blend weight for user interest signal
 const USER_INTEREST_SCALE = 10  // normalises raw dot product to ~[0,1]
@@ -55,26 +54,22 @@ export async function GET(request: NextRequest) {
   if (mode === 'foryou') {
     // ── For You ───────────────────────────────────────────────────────────────
     //
-    // Cursor is a page number (0-indexed). Each page fetches the next window of
-    // BATCH_SIZE articles per source, scores them, and returns the top `limit`.
+    // Single query: fetch up to 300 unseen articles from the last 30 days,
+    // score them, apply tag-proportional selection and desequencing.
     //
     // Scoring formula:
     //   score = recency × click_weight × (1 + α × user_interest) × jitter / freq_penalty
     //
-    // Where:
-    //   recency      = exp(−normalizedAge × 0.3), slow-publisher normalised
-    //   click_weight = 1.0 + (7-day likes × 0.1) per source
-    //   user_interest = normalised dot product of article TF-IDF vs user profile
-    //   jitter       = deterministic per-article noise [0.7–1.3]
-    //   freq_penalty = max(1, log(1 + articles_from_source_in_last_7d))
-    //
-    // P_disco: slow sources (< P_DISCO_THRESHOLD articles in 7d) get a 25% chance
-    // of injecting one extra article from a deeper offset into the scoring pool.
-    const pageNum = cursor ? Math.max(0, parseInt(cursor, 10) || 0) : 0
-    const sourceOffset = pageNum * BATCH_SIZE
+    // Client sends seen article IDs via ?seen=id1,id2,... so the server
+    // excludes them before scoring — no wasted bandwidth on hidden articles.
 
-    // Fetch active sources (with tags), user interest profile, and 7d article counts in parallel
     const thirtyDaysAgo = new Date(Date.now() - 30 * DAY_MS).toISOString()
+
+    // Parse client-provided seen IDs
+    const seenParam = searchParams.get('seen') ?? ''
+    const clientSeenIds = seenParam ? seenParam.split(',').filter(Boolean) : []
+
+    // Fetch sources, user interest, and 7d article counts in parallel (3 queries)
     const [
       { data: activeSources },
       { data: userInterestRows },
@@ -92,6 +87,10 @@ export async function GET(request: NextRequest) {
     const activeSourceRows = (activeSources ?? []) as { id: string; custom_tags: string[] }[]
     const sourceIds = activeSourceRows.map(s => s.id)
 
+    if (sourceIds.length === 0) {
+      return Response.json({ articles: [], nextCursor: null })
+    }
+
     // Build tag → source count for proportional tag selection
     const tagSourceCount = new Map<string, number>()
     for (const s of activeSourceRows) {
@@ -100,75 +99,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (sourceIds.length === 0) {
-      return Response.json({ articles: [], nextCursor: null })
-    }
-
     // Build user interest map: term → score
     const userInterestMap = new Map<string, number>(
       ((userInterestRows ?? []) as { term: string; score: number }[]).map(r => [r.term, r.score]),
     )
 
-    // Build 7-day article count per source for freq_penalty and P_disco detection
+    // Build 7-day article count per source for freq_penalty
     const source7dCount = new Map<string, number>()
     for (const row of (source7dRows ?? []) as { source_id: string }[]) {
       source7dCount.set(row.source_id, (source7dCount.get(row.source_id) ?? 0) + 1)
     }
 
-    // Fetch BATCH_SIZE articles at sourceOffset from every source in parallel.
-    // Hard cap at 30 days so stale articles never enter the scoring pool.
-    const perSourceResults = await Promise.all(
-      sourceIds.map(sourceId =>
-        supabase
-          .from('articles')
-          .select(ARTICLE_SELECT)
-          .eq('source_id', sourceId)
-          .eq('is_duplicate', false)
-          .gte('published_at', thirtyDaysAgo)
-          .order('published_at', { ascending: false })
-          .range(sourceOffset, sourceOffset + BATCH_SIZE - 1)
-          .then(r => (r.data ?? []) as unknown as ArticleRow[])
-      )
-    )
+    // Single articles query — exclude seen IDs, cap at 30 days (1 query)
+    let articlesQuery = supabase
+      .from('articles')
+      .select(ARTICLE_SELECT)
+      .eq('is_duplicate', false)
+      .gte('published_at', thirtyDaysAgo)
+      .order('published_at', { ascending: false })
+      .limit(300)
 
-    // P_disco: for slow sources, 25% chance to inject one article from a deeper offset.
-    // Capped at 30 days — consistent with the main pool cap.
-    const discoSince = thirtyDaysAgo
-    const discoFetches = sourceIds
-      .filter(sid => {
-        const count7d = source7dCount.get(sid) ?? 0
-        return count7d < P_DISCO_THRESHOLD && Math.random() < P_DISCO_PROB
-      })
-      .map(sid =>
-        supabase
-          .from('articles')
-          .select(ARTICLE_SELECT)
-          .eq('source_id', sid)
-          .eq('is_duplicate', false)
-          .gte('published_at', discoSince)
-          .order('published_at', { ascending: false })
-          // Random deeper offset within the next BATCH window
-          .range(
-            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * BATCH_SIZE),
-            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * BATCH_SIZE),
-          )
-          .limit(1)
-          .then(r => (r.data ?? []) as unknown as ArticleRow[])
-      )
-
-    const discoResults = await Promise.all(discoFetches)
-
-    // Merge all results, deduplicate by id
-    const seenIds = new Set<string>()
-    const allRows: ArticleRow[] = []
-    for (const sourceArticles of [...perSourceResults, ...discoResults]) {
-      for (const a of sourceArticles) {
-        if (!seenIds.has(a.id)) {
-          seenIds.add(a.id)
-          allRows.push(a)
-        }
-      }
+    if (clientSeenIds.length > 0) {
+      articlesQuery = articlesQuery.not('id', 'in', `(${clientSeenIds.join(',')})`)
     }
+
+    const { data: articlesRaw } = await articlesQuery
+    const allRows = (articlesRaw ?? []) as unknown as ArticleRow[]
 
     // Tag filter
     const rows = tag
@@ -228,11 +184,9 @@ export async function GET(request: NextRequest) {
     const selected = tagProportionalSelect(viable, tagSourceCount, sourceIds.length, limit)
     const pageItems = desequence(selected, 2)
 
-    const anySourceHasMore = perSourceResults.some(r => r.length === BATCH_SIZE)
-
     return Response.json({
       articles: pageItems.map(({ row, userInterest }) => toArticleShape(row, userInterest)),
-      nextCursor: anySourceHasMore ? String(pageNum + 1) : null,
+      nextCursor: pageItems.length === limit ? 'more' : null,
     })
   }
 
