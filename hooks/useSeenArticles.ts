@@ -38,19 +38,22 @@ function hideThreshold(userInterestScore?: number): number {
 type SeenMap = Record<string, string[]>;
 
 // ---------------------------------------------------------------------------
-// Module-level page-load session ID — changes on every page load/reload.
-// Using a module variable (not sessionStorage) means each reload = new session,
-// so articles seen in a previous visit are hidden in For You on the next load.
+// Tab-level session ID — persists across reloads within the same browser tab,
+// cleared when the tab closes. This means multiple reloads in one sitting don't
+// accumulate session counts; only opening the feed in a new tab/window does.
 // ---------------------------------------------------------------------------
 
-let _pageLoadSessionId: string | null = null;
+const SESSION_ID_KEY = 'akana_session_id';
 function getPageLoadSessionId(): string {
-  if (_pageLoadSessionId === null) {
-    _pageLoadSessionId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  if (typeof window === 'undefined') return 'ssr';
+  let sid = sessionStorage.getItem(SESSION_ID_KEY);
+  if (!sid) {
+    sid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem(SESSION_ID_KEY, sid);
   }
-  return _pageLoadSessionId;
+  return sid;
 }
 
 function loadSeenMap(): SeenMap {
