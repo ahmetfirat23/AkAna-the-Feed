@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import BookmarkButton from "./BookmarkButton";
 
 export interface Article {
@@ -145,8 +145,59 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(diffSec / 31536000)}y ago`;
 }
 
+const VIEWED_KEY = "akana_viewed";
+const OPENED_KEY = "akana_opened";
+
+function getTrackMap(key: string): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem(key) ?? "{}"); } catch { return {}; }
+}
+
 export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
   const [bookmarked, setBookmarked] = useState(article.is_bookmarked);
+  const articleRef = useRef<HTMLElement>(null);
+
+  // View tracking — fires once when card scrolls into view (50% visible)
+  useEffect(() => {
+    const el = articleRef.current;
+    if (!el || !article.source_id) return;
+
+    const viewed = getTrackMap(VIEWED_KEY);
+    if (viewed[article.id]) return; // already counted
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          observer.disconnect();
+          const map = getTrackMap(VIEWED_KEY);
+          map[article.id] = true;
+          localStorage.setItem(VIEWED_KEY, JSON.stringify(map));
+          fetch("/api/views", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ article_id: article.id, source_id: article.source_id }),
+          }).catch(() => {});
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [article.id, article.source_id]);
+
+  // Open tracking — fires once when user navigates into the article reader
+  function handleOpen() {
+    if (!article.source_id) return;
+    const map = getTrackMap(OPENED_KEY);
+    if (map[article.id]) return; // already counted
+    map[article.id] = true;
+    localStorage.setItem(OPENED_KEY, JSON.stringify(map));
+    fetch("/api/opens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ article_id: article.id, source_id: article.source_id }),
+    }).catch(() => {});
+  }
 
   function handleBookmarkToggle(next: boolean) {
     setBookmarked(next);
@@ -156,7 +207,7 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
   const snippet = article.summary ?? article.description;
 
   return (
-    <article className="mb-2 border border-border bg-bg-card hover:bg-bg-surface transition-colors duration-150 md:hover:-translate-y-px md:hover:shadow-md md:transition-[background-color,transform,box-shadow] md:duration-150">
+    <article ref={articleRef} className="mb-2 border border-border bg-bg-card hover:bg-bg-surface transition-colors duration-150 md:hover:-translate-y-px md:hover:shadow-md md:transition-[background-color,transform,box-shadow] md:duration-150">
       {/* Article image — full-width above the text block, tags overlaid top-left */}
       {article.image_url && (
         <div className="relative w-full h-36 bg-bg-surface overflow-hidden">
@@ -165,6 +216,7 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
             tabIndex={-1}
             aria-hidden="true"
             className="block w-full h-full"
+            onClick={handleOpen}
           >
             <Image
               src={article.image_url}
@@ -232,6 +284,7 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
         <Link
           href={`/article/${article.id}`}
           className="block group focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary rounded-sm"
+          onClick={handleOpen}
         >
           <h2 className="text-base font-semibold leading-snug text-text-primary group-hover:text-accent-primary transition-colors duration-150 mb-1">
             {article.title}

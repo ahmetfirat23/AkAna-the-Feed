@@ -47,6 +47,28 @@ CREATE TABLE click_events (
 -- Migration for existing databases (run this if the table already exists):
 -- ALTER TABLE click_events ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'like' CHECK (type IN ('like', 'dislike'));
 
+-- Article view tracking (once per article per device, via IntersectionObserver)
+CREATE TABLE view_events (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  article_id  UUID        NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  source_id   UUID        NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  viewed_at   TIMESTAMPTZ DEFAULT now()
+);
+
+-- Article open tracking (once per article per device, when user navigates to reader)
+CREATE TABLE open_events (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  article_id  UUID        NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+  source_id   UUID        NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  opened_at   TIMESTAMPTZ DEFAULT now()
+);
+
+-- Migration for existing databases:
+-- CREATE TABLE IF NOT EXISTS view_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE, source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE, viewed_at TIMESTAMPTZ DEFAULT now());
+-- CREATE TABLE IF NOT EXISTS open_events (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE, source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE, opened_at TIMESTAMPTZ DEFAULT now());
+-- CREATE INDEX ON view_events (source_id);
+-- CREATE INDEX ON open_events (source_id);
+
 -- Reading points (synced across devices)
 CREATE TABLE reading_points (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

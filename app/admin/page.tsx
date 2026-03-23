@@ -14,6 +14,8 @@ interface Source {
   created_at: string;
   like_count?: number;
   dislike_count?: number;
+  view_count?: number;
+  open_count?: number;
 }
 
 /** Returns a health indicator based on consecutive_errors and last_fetched_at */
@@ -379,6 +381,15 @@ function SourceRow({
                 : `Last error: ${source.last_error}`}
             </span>
           )}
+          {((source.view_count ?? 0) > 0 || (source.open_count ?? 0) > 0) && (
+            <span className="text-xs text-text-secondary flex items-center gap-2">
+              <span title="Articles seen">{source.view_count ?? 0} seen</span>
+              <span title="Articles opened">{source.open_count ?? 0} opened</span>
+              <span title="Click-through rate" className="tabular-nums">
+                {source.view_count ? Math.round(((source.open_count ?? 0) / source.view_count) * 100) : 0}% CTR
+              </span>
+            </span>
+          )}
           {((source.like_count ?? 0) > 0 || (source.dislike_count ?? 0) > 0) && (
             <span className="text-xs text-text-secondary flex items-center gap-2">
               <span title="Likes">♥ {source.like_count ?? 0}</span>
@@ -422,18 +433,18 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         return res.json() as Promise<Source[]>;
       }),
       fetch("/api/admin/source-stats").then((res) =>
-        res.ok ? res.json() as Promise<{ source_id: string; like_count: number; dislike_count: number }[]> : []
+        res.ok ? res.json() as Promise<{ source_id: string; like_count: number; dislike_count: number; view_count: number; open_count: number }[]> : []
       ).catch(() => []),
     ])
       .then(([sourcesData, stats]) => {
         const statsMap = new Map(
-          (stats as { source_id: string; like_count: number; dislike_count: number }[]).map(
+          (stats as { source_id: string; like_count: number; dislike_count: number; view_count: number; open_count: number }[]).map(
             (s) => [s.source_id, s]
           )
         );
         const merged = sourcesData.map((src) => {
           const s = statsMap.get(src.id);
-          return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0 };
+          return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0, view_count: s?.view_count ?? 0, open_count: s?.open_count ?? 0 };
         });
         setSources(merged);
       })
@@ -468,13 +479,13 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         ]);
         if (sourcesRes.ok) {
           const sourcesData: Source[] = await sourcesRes.json();
-          const statsData: { source_id: string; like_count: number; dislike_count: number }[] =
+          const statsData: { source_id: string; like_count: number; dislike_count: number; view_count: number; open_count: number }[] =
             statsRes.ok ? await statsRes.json() : [];
           const statsMap = new Map(statsData.map((s) => [s.source_id, s]));
           setSources(
             sourcesData.map((src) => {
               const s = statsMap.get(src.id);
-              return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0 };
+              return { ...src, like_count: s?.like_count ?? 0, dislike_count: s?.dislike_count ?? 0, view_count: s?.view_count ?? 0, open_count: s?.open_count ?? 0 };
             })
           );
         }
