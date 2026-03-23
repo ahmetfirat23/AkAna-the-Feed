@@ -189,9 +189,8 @@ export async function GET(request: NextRequest) {
         : 7 + (ageInDays - newestAgeDays)
       const recency = Math.exp(-Math.max(0, normalizedAge) * 0.3)
 
-      // Deterministic jitter from article ID
-      const idByte = parseInt(row.id.replace(/-/g, '').slice(-2), 16) // 0–255
-      const jitter = 0.7 + (idByte / 255) * 0.6
+      // Random jitter [0.7–1.3] so feed order varies each load
+      const jitter = 0.7 + Math.random() * 0.6
 
       // User interest: normalised dot product between article TF-IDF and user profile
       const articleTerms = parseTfidfTerms(row.tfidf_terms ?? [])

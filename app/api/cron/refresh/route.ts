@@ -370,7 +370,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const weightUpdates = allSources.map((s: { id: string }) => {
       const clicks = countBySouce.get(s.id) ?? 0;
-      const clickWeight = 1.0 + clicks * 0.1;
+      const clickWeight = 1.0 + Math.log(1 + clicks) * 0.4;
       return supabase
         .from('sources')
         .update({ click_weight: clickWeight })
