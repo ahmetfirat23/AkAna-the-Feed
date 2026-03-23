@@ -73,13 +73,14 @@ export async function GET(request: NextRequest) {
     const pageNum = cursor ? Math.max(0, parseInt(cursor, 10) || 0) : 0
     const sourceOffset = pageNum * BATCH_SIZE
 
-    // Fetch active source IDs, user interest profile, and 7d article counts in parallel
+    // Fetch active sources (with tags), user interest profile, and 7d article counts in parallel
+    const thirtyDaysAgo = new Date(Date.now() - 30 * DAY_MS).toISOString()
     const [
       { data: activeSources },
       { data: userInterestRows },
       { data: source7dRows },
     ] = await Promise.all([
-      supabase.from('sources').select('id').eq('active', true),
+      supabase.from('sources').select('id, custom_tags').eq('active', true),
       serviceRoleClient.from('user_interest').select('term, score'),
       supabase
         .from('articles')
@@ -88,7 +89,16 @@ export async function GET(request: NextRequest) {
         .eq('is_duplicate', false),
     ])
 
-    const sourceIds = ((activeSources ?? []) as { id: string }[]).map(s => s.id)
+    const activeSourceRows = (activeSources ?? []) as { id: string; custom_tags: string[] }[]
+    const sourceIds = activeSourceRows.map(s => s.id)
+
+    // Build tag → source count for proportional tag selection
+    const tagSourceCount = new Map<string, number>()
+    for (const s of activeSourceRows) {
+      for (const tag of s.custom_tags ?? []) {
+        tagSourceCount.set(tag, (tagSourceCount.get(tag) ?? 0) + 1)
+      }
+    }
 
     if (sourceIds.length === 0) {
       return Response.json({ articles: [], nextCursor: null })
@@ -106,6 +116,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch BATCH_SIZE articles at sourceOffset from every source in parallel.
+    // Hard cap at 30 days so stale articles never enter the scoring pool.
     const perSourceResults = await Promise.all(
       sourceIds.map(sourceId =>
         supabase
@@ -113,6 +124,7 @@ export async function GET(request: NextRequest) {
           .select(ARTICLE_SELECT)
           .eq('source_id', sourceId)
           .eq('is_duplicate', false)
+          .gte('published_at', thirtyDaysAgo)
           .order('published_at', { ascending: false })
           .range(sourceOffset, sourceOffset + BATCH_SIZE - 1)
           .then(r => (r.data ?? []) as unknown as ArticleRow[])
@@ -120,8 +132,8 @@ export async function GET(request: NextRequest) {
     )
 
     // P_disco: for slow sources, 25% chance to inject one article from a deeper offset.
-    // Capped at 60 days old so ancient articles from infrequent blogs don't surface.
-    const discoSince = new Date(Date.now() - 60 * DAY_MS).toISOString()
+    // Capped at 30 days — consistent with the main pool cap.
+    const discoSince = thirtyDaysAgo
     const discoFetches = sourceIds
       .filter(sid => {
         const count7d = source7dCount.get(sid) ?? 0
@@ -213,7 +225,8 @@ export async function GET(request: NextRequest) {
 
     // Drop stale articles (score < 0.01)
     const viable = scored.filter(item => item.score >= 0.01)
-    const pageItems = desequence(viable.slice(0, limit * 2), 2).slice(0, limit)
+    const selected = tagProportionalSelect(viable, tagSourceCount, sourceIds.length, limit)
+    const pageItems = desequence(selected, 2)
 
     const anySourceHasMore = perSourceResults.some(r => r.length === BATCH_SIZE)
 
@@ -277,6 +290,48 @@ export async function GET(request: NextRequest) {
       ? `${last.published_at ?? ''}|${last.id}`
       : null,
   })
+}
+
+// Proportionally allocate page slots across tags based on source count per tag.
+// Tags with more sources get more slots; every tag gets at least 1 slot.
+// Articles not matching any quota-needing tag fill remaining slots in score order.
+function tagProportionalSelect<T extends { row: ArticleRow }>(
+  items: T[],
+  tagSourceCount: Map<string, number>,
+  totalSources: number,
+  limit: number,
+): T[] {
+  if (tagSourceCount.size === 0) return items.slice(0, limit)
+
+  // Compute target slots per tag (min 1 each)
+  const target = new Map<string, number>()
+  for (const [tag, count] of tagSourceCount) {
+    target.set(tag, Math.max(1, Math.round((count / totalSources) * limit)))
+  }
+
+  const used = new Map<string, number>()
+  const result: T[] = []
+  const overflow: T[] = []
+
+  for (const item of items) {
+    if (result.length >= limit) break
+    const tags = item.row.sources?.custom_tags ?? []
+    const needsMore = tags.some(t => (used.get(t) ?? 0) < (target.get(t) ?? 0))
+    if (needsMore || tags.length === 0) {
+      result.push(item)
+      for (const t of tags) used.set(t, (used.get(t) ?? 0) + 1)
+    } else {
+      overflow.push(item)
+    }
+  }
+
+  // Fill remaining slots with highest-scored overflow
+  for (const item of overflow) {
+    if (result.length >= limit) break
+    result.push(item)
+  }
+
+  return result
 }
 
 // Reorder items so no source appears more than `maxConsecutive` times in a row.
