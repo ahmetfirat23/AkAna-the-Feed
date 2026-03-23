@@ -160,9 +160,8 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
           return [...prev, ...data.articles.filter((a) => !seen.has(a.id))];
         });
 
-        // Mark all fetched articles as seen so Chronological views also hide
-        // articles in For You (user shouldn't see the same thing twice).
-        markSeen(data.articles.map((a) => a.id));
+        // Note: markSeen is called per-article when it enters the viewport (onVisible),
+        // not here — so only articles the user actually scrolls past count as seen.
 
         setCursor(data.nextCursor);
         setHasMore(data.nextCursor !== null);
@@ -374,6 +373,7 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
             <ArticleCard
               article={article}
               onBookmark={handleBookmark}
+              onVisible={activeMode === 'chronological' ? (id) => markSeen([id]) : undefined}
             />
           </div>
         ))}

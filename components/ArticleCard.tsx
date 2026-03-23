@@ -129,6 +129,7 @@ function ReactionButtons({ articleId, sourceId }: ReactionButtonsProps) {
 interface ArticleCardProps {
   article: Article;
   onBookmark: (id: string, bookmarked: boolean) => void;
+  onVisible?: (id: string, score?: number) => void;
 }
 
 /**
@@ -154,7 +155,7 @@ function getTrackMap(key: string): Record<string, boolean> {
   try { return JSON.parse(localStorage.getItem(key) ?? "{}"); } catch { return {}; }
 }
 
-export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
+export default function ArticleCard({ article, onBookmark, onVisible }: ArticleCardProps) {
   const [bookmarked, setBookmarked] = useState(article.is_bookmarked);
   const articleRef = useRef<HTMLElement>(null);
 
@@ -170,6 +171,7 @@ export default function ArticleCard({ article, onBookmark }: ArticleCardProps) {
       (entries) => {
         if (entries[0].isIntersecting) {
           observer.disconnect();
+          onVisible?.(article.id, article.user_interest_score);
           const map = getTrackMap(VIEWED_KEY);
           map[article.id] = true;
           localStorage.setItem(VIEWED_KEY, JSON.stringify(map));

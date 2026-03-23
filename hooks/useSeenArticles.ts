@@ -38,22 +38,18 @@ function hideThreshold(userInterestScore?: number): number {
 type SeenMap = Record<string, string[]>;
 
 // ---------------------------------------------------------------------------
-// Tab-level session ID — persists across reloads within the same browser tab,
-// cleared when the tab closes. This means multiple reloads in one sitting don't
-// accumulate session counts; only opening the feed in a new tab/window does.
+// Page-load session ID — changes on every reload so each visit is a new session.
+// Articles seen in a previous visit accumulate session counts and eventually hide.
 // ---------------------------------------------------------------------------
 
-const SESSION_ID_KEY = 'akana_session_id';
+let _pageLoadSessionId: string | null = null;
 function getPageLoadSessionId(): string {
-  if (typeof window === 'undefined') return 'ssr';
-  let sid = sessionStorage.getItem(SESSION_ID_KEY);
-  if (!sid) {
-    sid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  if (_pageLoadSessionId === null) {
+    _pageLoadSessionId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2) + Date.now().toString(36);
-    sessionStorage.setItem(SESSION_ID_KEY, sid);
   }
-  return sid;
+  return _pageLoadSessionId;
 }
 
 function loadSeenMap(): SeenMap {
