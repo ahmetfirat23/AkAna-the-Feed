@@ -22,7 +22,17 @@ import { useCallback } from 'react';
 
 const STORAGE_KEY = 'akana_seen';
 const MAX_SEEN_ENTRIES = 500;
-const HIDE_THRESHOLD = 1; // distinct OTHER page-loads before an article is hidden
+
+// Dynamic hide thresholds based on user_interest_score:
+//   > 0.6  → hide after 3 other sessions (high-value, keep re-showing)
+//   > 0.2  → hide after 2 other sessions (default)
+//   ≤ 0.2  → hide after 1 other session  (low-value, discard fast)
+function hideThreshold(userInterestScore?: number): number {
+  if (userInterestScore === undefined) return 1;
+  if (userInterestScore > 0.6) return 2; // other-session count: 3 sessions total = 2 others
+  if (userInterestScore > 0.2) return 1; // 2 sessions total = 1 other (previous default)
+  return 0; // hide after the first session it was seen in (1 session = 0 others needed)
+}
 
 // SeenMap: articleId → array of sessionIds (stored as array; Set semantics enforced in code)
 type SeenMap = Record<string, string[]>;
@@ -114,21 +124,26 @@ export function useSeenArticles() {
   }, []);
 
   /**
-   * Returns true if the article has been seen in 2 or more sessions OTHER than
-   * the current session. The current session's own views never cause hiding.
+   * Returns true if the article has been seen in enough other sessions to be hidden.
+   * The threshold scales with user_interest_score:
+   *   > 0.6  → kept for 3 sessions (shown more because it's highly relevant)
+   *   > 0.2  → kept for 2 sessions (default behaviour)
+   *   ≤ 0.2  → hidden after 1 session (low-interest, cleared fast)
+   * The current session's own views never cause hiding.
    */
-  const isHidden = useCallback((articleId: string): boolean => {
+  const isHidden = useCallback((articleId: string, userInterestScore?: number): boolean => {
     const sid = getPageLoadSessionId();
     const map = loadSeenMap();
     const sessions = map[articleId];
     if (!sessions || sessions.length === 0) return false;
 
-    // Count sessions that are not the current one.
+    const threshold = hideThreshold(userInterestScore);
+
     let otherCount = 0;
     for (const s of sessions) {
       if (s !== sid) {
         otherCount += 1;
-        if (otherCount >= HIDE_THRESHOLD) return true;
+        if (otherCount > threshold) return true;
       }
     }
     return false;

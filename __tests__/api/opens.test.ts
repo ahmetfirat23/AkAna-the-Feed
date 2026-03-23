@@ -1,18 +1,13 @@
 import { NextRequest } from 'next/server'
-import { POST } from '@/app/api/clicks/route'
+import { POST } from '@/app/api/opens/route'
 
-// Mock Supabase — needs to support chained calls for the article tfidf_terms fetch
 jest.mock('@/lib/supabase', () => {
   const insertFn = jest.fn().mockResolvedValue({ error: null })
   const upsertFn = jest.fn().mockResolvedValue({ error: null })
   const maybeSingleFn = jest.fn().mockResolvedValue({ data: null, error: null })
-  const inFn = jest.fn().mockReturnValue({ data: [], error: null })
 
-  // from('click_events').insert(...)
-  // from('articles').select(...).eq(...).maybeSingle()
-  // from('user_interest').select(...).in(...) and .upsert(...)
   const fromFn = jest.fn().mockImplementation((table: string) => {
-    if (table === 'click_events') return { insert: insertFn }
+    if (table === 'open_events') return { insert: insertFn }
     if (table === 'articles') {
       return {
         select: jest.fn().mockReturnValue({
@@ -55,7 +50,7 @@ beforeEach(() => {
   mocks.maybeSingleFn.mockResolvedValue({ data: null, error: null })
 
   mocks.fromFn.mockImplementation((table: string) => {
-    if (table === 'click_events') return { insert: mocks.insertFn }
+    if (table === 'open_events') return { insert: mocks.insertFn }
     if (table === 'articles') {
       return {
         select: jest.fn().mockReturnValue({
@@ -75,36 +70,23 @@ beforeEach(() => {
   })
 })
 
-// Helper: wait for fire-and-forget async to settle
 const flushPromises = () => new Promise(r => setTimeout(r, 10))
 
-describe('POST /api/clicks', () => {
-  it('records a like click and returns 200', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
+describe('POST /api/opens', () => {
+  it('records an open event and returns 200', async () => {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'like' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const response = await POST(request)
-
-    expect(response.status).toBe(200)
-    expect(mocks.insertFn).toHaveBeenCalledWith({ article_id: 'a1', source_id: 's1', type: 'like' })
-  })
-
-  it('records a dislike click and returns 200', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
-      method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'dislike' }),
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
     const response = await POST(request)
     expect(response.status).toBe(200)
+    expect(mocks.insertFn).toHaveBeenCalledWith({ article_id: 'a1', source_id: 's1' })
   })
 
   it('returns 400 when article_id is missing', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
       body: JSON.stringify({ source_id: 's1' }),
       headers: { 'Content-Type': 'application/json' },
@@ -115,7 +97,7 @@ describe('POST /api/clicks', () => {
   })
 
   it('returns 400 when source_id is missing', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
       body: JSON.stringify({ article_id: 'a1' }),
       headers: { 'Content-Type': 'application/json' },
@@ -125,19 +107,8 @@ describe('POST /api/clicks', () => {
     expect(response.status).toBe(400)
   })
 
-  it('returns 400 for invalid type', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
-      method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'share' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    const response = await POST(request)
-    expect(response.status).toBe(400)
-  })
-
   it('returns 400 on invalid JSON body', async () => {
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
       body: 'not-json',
       headers: { 'Content-Type': 'application/json' },
@@ -150,9 +121,9 @@ describe('POST /api/clicks', () => {
   it('returns 500 when Supabase insert errors', async () => {
     mocks.insertFn.mockResolvedValue({ error: { message: 'db error' } })
 
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'like' }),
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -160,15 +131,15 @@ describe('POST /api/clicks', () => {
     expect(response.status).toBe(500)
   })
 
-  it('updates user_interest for like when article has tfidf_terms', async () => {
+  it('updates user_interest with +0.2 click weight when article has tfidf_terms', async () => {
     mocks.maybeSingleFn.mockResolvedValue({
-      data: { tfidf_terms: ['apple:0.8000', 'watch:0.5000'] },
+      data: { tfidf_terms: ['generative ai:0.9000', 'model:0.5000', 'training:0.3000', 'data:0.2000'] },
       error: null,
     })
 
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'like' }),
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -177,56 +148,20 @@ describe('POST /api/clicks', () => {
 
     expect(mocks.upsertFn).toHaveBeenCalledTimes(1)
     const upsertArg = mocks.upsertFn.mock.calls[0][0] as { term: string; score: number }[]
-    // Like delta = 1.0, 2 terms → 0.5 per term
-    expect(upsertArg.find(r => r.term === 'apple')?.score).toBeCloseTo(0.5)
-    expect(upsertArg.find(r => r.term === 'watch')?.score).toBeCloseTo(0.5)
+    // OPEN_INTEREST_DELTA = 0.2, 4 terms → 0.05 per term
+    expect(upsertArg.find(r => r.term === 'generative ai')?.score).toBeCloseTo(0.05)
+    expect(upsertArg.find(r => r.term === 'model')?.score).toBeCloseTo(0.05)
   })
 
-  it('updates user_interest with negative delta for dislike', async () => {
-    mocks.maybeSingleFn.mockResolvedValue({
-      data: { tfidf_terms: ['apple:0.8000', 'watch:0.5000'] },
-      error: null,
-    })
-
-    const request = new NextRequest('http://localhost/api/clicks', {
-      method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'dislike' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    await POST(request)
-    await flushPromises()
-
-    expect(mocks.upsertFn).toHaveBeenCalledTimes(1)
-    const upsertArg = mocks.upsertFn.mock.calls[0][0] as { term: string; score: number }[]
-    // Dislike delta = -2.0, 2 terms → -1.0 per term
-    expect(upsertArg.find(r => r.term === 'apple')?.score).toBeCloseTo(-1.0)
-  })
-
-  it('does not update user_interest when article has no tfidf_terms', async () => {
+  it('does not crash when article has no tfidf_terms', async () => {
     mocks.maybeSingleFn.mockResolvedValue({
       data: { tfidf_terms: [] },
       error: null,
     })
 
-    const request = new NextRequest('http://localhost/api/clicks', {
+    const request = new NextRequest('http://localhost/api/opens', {
       method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'like' }),
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-    await POST(request)
-    await flushPromises()
-
-    expect(mocks.upsertFn).not.toHaveBeenCalled()
-  })
-
-  it('does not crash when article fetch returns null', async () => {
-    mocks.maybeSingleFn.mockResolvedValue({ data: null, error: null })
-
-    const request = new NextRequest('http://localhost/api/clicks', {
-      method: 'POST',
-      body: JSON.stringify({ article_id: 'a1', source_id: 's1', type: 'like' }),
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -235,5 +170,61 @@ describe('POST /api/clicks', () => {
 
     expect(response.status).toBe(200)
     expect(mocks.upsertFn).not.toHaveBeenCalled()
+  })
+
+  it('does not crash when article fetch returns null', async () => {
+    mocks.maybeSingleFn.mockResolvedValue({ data: null, error: null })
+
+    const request = new NextRequest('http://localhost/api/opens', {
+      method: 'POST',
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const response = await POST(request)
+    await flushPromises()
+
+    expect(response.status).toBe(200)
+    expect(mocks.upsertFn).not.toHaveBeenCalled()
+  })
+
+  it('accumulates on top of existing user_interest scores', async () => {
+    mocks.maybeSingleFn.mockResolvedValue({
+      data: { tfidf_terms: ['apple:0.8000'] },
+      error: null,
+    })
+    // Simulate existing score of 1.5 for 'apple'
+    mocks.fromFn.mockImplementation((table: string) => {
+      if (table === 'open_events') return { insert: mocks.insertFn }
+      if (table === 'articles') {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({ maybeSingle: mocks.maybeSingleFn }),
+          }),
+        }
+      }
+      if (table === 'user_interest') {
+        return {
+          select: jest.fn().mockReturnValue({
+            in: jest.fn().mockResolvedValue({ data: [{ term: 'apple', score: 1.5 }], error: null }),
+          }),
+          upsert: mocks.upsertFn,
+        }
+      }
+      return { insert: mocks.insertFn }
+    })
+
+    const request = new NextRequest('http://localhost/api/opens', {
+      method: 'POST',
+      body: JSON.stringify({ article_id: 'a1', source_id: 's1' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    await POST(request)
+    await flushPromises()
+
+    const upsertArg = mocks.upsertFn.mock.calls[0][0] as { term: string; score: number }[]
+    // 1.5 existing + 0.2/1 = 1.7
+    expect(upsertArg.find(r => r.term === 'apple')?.score).toBeCloseTo(1.7)
   })
 })

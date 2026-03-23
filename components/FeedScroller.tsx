@@ -345,7 +345,7 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
   // In For You mode, hide articles the user has already seen in 2+ other sessions.
   // Chronological mode shows everything as-is.
   const visibleArticles =
-    activeMode === 'foryou' ? articles.filter((a) => !isHidden(a.id)) : articles;
+    activeMode === 'foryou' ? articles.filter((a) => !isHidden(a.id, a.user_interest_score)) : articles;
 
   return (
     <div className="w-full max-w-[720px] mx-auto">

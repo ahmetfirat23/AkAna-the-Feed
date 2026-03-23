@@ -17,6 +17,7 @@ export interface Article {
   source_id?: string;
   tags: string[];
   is_bookmarked: boolean;
+  user_interest_score?: number;
 }
 
 const LIKED_KEY = "akana_liked";
