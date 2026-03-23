@@ -32,8 +32,8 @@ const ARTICLE_SELECT = `
 `
 
 // foryou tuning constants
-const PER_SOURCE_LIMIT = 15 // articles fetched per source
-const SOURCE_CAP = 3        // max articles per source in a single scored page
+const BATCH_SIZE = 25 // articles fetched per source per page (enough for scoring + cap)
+const SOURCE_CAP = 3  // max articles per source in a single returned page
 const DAY_MS = 1000 * 60 * 60 * 24
 
 export async function GET(request: NextRequest) {
@@ -49,9 +49,11 @@ export async function GET(request: NextRequest) {
   if (mode === 'foryou') {
     // ── For You ───────────────────────────────────────────────────────────────
     //
-    // Cursor is a numeric page offset (not a published_at timestamp).
-    // This lets us serve stable, scored pages without re-querying from scratch.
-    const offset = cursor ? Math.max(0, parseInt(cursor, 10) || 0) : 0
+    // Cursor is a page number (0-indexed). Each page fetches the next window of
+    // BATCH_SIZE articles per source, scores them, and returns the top `limit`.
+    // This means we never fetch more than sources × BATCH_SIZE rows per request.
+    const page = cursor ? Math.max(0, parseInt(cursor, 10) || 0) : 0
+    const sourceOffset = page * BATCH_SIZE
 
     // Fetch all active source IDs
     const { data: activeSources } = await supabase
@@ -65,9 +67,9 @@ export async function GET(request: NextRequest) {
       return Response.json({ articles: [], nextCursor: null })
     }
 
-    // Fetch PER_SOURCE_LIMIT most recent articles from every source in parallel.
-    // This guarantees all sources — including slow publishers like The Gradient —
-    // are represented in the scoring pool, regardless of global publish volume.
+    // Fetch BATCH_SIZE articles at sourceOffset from every source in parallel.
+    // Each page looks at a fresh window further back in time per source, so
+    // scroll-to-end doesn't re-show the same articles from page 1.
     const perSourceResults = await Promise.all(
       sourceIds.map(sourceId =>
         supabase
@@ -76,7 +78,7 @@ export async function GET(request: NextRequest) {
           .eq('source_id', sourceId)
           .eq('is_duplicate', false)
           .order('published_at', { ascending: false })
-          .limit(PER_SOURCE_LIMIT)
+          .range(sourceOffset, sourceOffset + BATCH_SIZE - 1)
           .then(r => (r.data ?? []) as unknown as ArticleRow[])
       )
     )
@@ -104,7 +106,7 @@ export async function GET(request: NextRequest) {
 
     const now = Date.now()
 
-    // Find each source's newest article age in days.
+    // Find each source's newest article age in days (within this page's window).
     // Used below to normalize recency for slow publishers.
     const sourceNewestAge = new Map<string, number>()
     for (const row of rows) {
@@ -139,12 +141,10 @@ export async function GET(request: NextRequest) {
 
     scored.sort((a, b) => b.score - a.score)
 
-    // Per-source diversity cap: no single source takes more than SOURCE_CAP
-    // slots in the *first* portion of the feed, so high-volume sources can't
-    // crowd out every slot on page 1–2.
+    // Per-source diversity cap: no single source takes more than SOURCE_CAP slots.
     // Articles scoring below 0.01 are dropped (stale, no signal).
-    // After the capped pool is exhausted, the remaining scored articles follow
-    // (no cap) so the feed keeps going rather than hitting "end of feed" early.
+    // Overflow articles (didn't make the cap) follow in score order so the page
+    // still fills up to `limit`.
     const sourceCounts = new Map<string, number>()
     const diversified: typeof scored = []
     const diversifiedIds = new Set<string>()
@@ -159,16 +159,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Overflow: scored articles that didn't make the cap, in score order
     const overflow = scored.filter(item => item.score >= 0.01 && !diversifiedIds.has(item.row.id))
     const fullPool = [...diversified, ...overflow]
+    const pageItems = fullPool.slice(0, limit)
 
-    const page = fullPool.slice(offset, offset + limit)
-    const hasMore = offset + limit < fullPool.length
+    // hasMore: at least one source returned a full BATCH_SIZE window, meaning
+    // there are likely more articles further back in time.
+    const anySourceHasMore = perSourceResults.some(r => r.length === BATCH_SIZE)
 
     return Response.json({
-      articles: page.map(({ row }) => toArticleShape(row)),
-      nextCursor: hasMore ? String(offset + limit) : null,
+      articles: pageItems.map(({ row }) => toArticleShape(row)),
+      nextCursor: anySourceHasMore ? String(page + 1) : null,
     })
   }
 
