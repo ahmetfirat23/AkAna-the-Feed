@@ -373,7 +373,7 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
             <ArticleCard
               article={article}
               onBookmark={handleBookmark}
-              onVisible={activeMode === 'chronological' ? (id) => markSeen([id]) : undefined}
+              onVisible={(id) => markSeen([id])}
             />
           </div>
         ))}
