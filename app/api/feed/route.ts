@@ -119,7 +119,9 @@ export async function GET(request: NextRequest) {
       )
     )
 
-    // P_disco: for slow sources, 25% chance to inject one article from a deeper offset
+    // P_disco: for slow sources, 25% chance to inject one article from a deeper offset.
+    // Capped at 60 days old so ancient articles from infrequent blogs don't surface.
+    const discoSince = new Date(Date.now() - 60 * DAY_MS).toISOString()
     const discoFetches = sourceIds
       .filter(sid => {
         const count7d = source7dCount.get(sid) ?? 0
@@ -131,11 +133,12 @@ export async function GET(request: NextRequest) {
           .select(ARTICLE_SELECT)
           .eq('source_id', sid)
           .eq('is_duplicate', false)
+          .gte('published_at', discoSince)
           .order('published_at', { ascending: false })
-          // Random deeper offset within the next 3 BATCH windows
+          // Random deeper offset within the next BATCH window
           .range(
-            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * 3 * BATCH_SIZE),
-            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * 3 * BATCH_SIZE),
+            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * BATCH_SIZE),
+            sourceOffset + BATCH_SIZE + Math.floor(Math.random() * BATCH_SIZE),
           )
           .limit(1)
           .then(r => (r.data ?? []) as unknown as ArticleRow[])
@@ -210,7 +213,7 @@ export async function GET(request: NextRequest) {
 
     // Drop stale articles (score < 0.01)
     const viable = scored.filter(item => item.score >= 0.01)
-    const pageItems = viable.slice(0, limit)
+    const pageItems = desequence(viable.slice(0, limit * 2), 2).slice(0, limit)
 
     const anySourceHasMore = perSourceResults.some(r => r.length === BATCH_SIZE)
 
@@ -274,6 +277,34 @@ export async function GET(request: NextRequest) {
       ? `${last.published_at ?? ''}|${last.id}`
       : null,
   })
+}
+
+// Reorder items so no source appears more than `maxConsecutive` times in a row.
+// Works on the already-scored sorted list — score order is preserved as much as possible.
+function desequence<T extends { row: ArticleRow }>(items: T[], maxConsecutive: number): T[] {
+  const result: T[] = []
+  const pool = [...items]
+
+  while (pool.length > 0) {
+    const tail = result.slice(-maxConsecutive)
+    const blocked =
+      tail.length === maxConsecutive && tail.every(i => i.row.source_id === tail[0].row.source_id)
+        ? tail[0].row.source_id
+        : null
+
+    if (!blocked) {
+      result.push(pool.shift()!)
+    } else {
+      const idx = pool.findIndex(i => i.row.source_id !== blocked)
+      if (idx === -1) {
+        result.push(...pool.splice(0)) // only one source left, just append
+        break
+      }
+      result.push(pool.splice(idx, 1)[0])
+    }
+  }
+
+  return result
 }
 
 function toArticleShape(row: ArticleRow, userInterestScore = 0) {
