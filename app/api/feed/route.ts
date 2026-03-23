@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { getServerClient } from '@/lib/supabase'
+import { getServerClient, serviceRoleClient } from '@/lib/supabase'
 import { parseTfidfTerms, computeDotProduct } from '@/lib/tfidf'
 
 interface ArticleRow {
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       { data: source7dRows },
     ] = await Promise.all([
       supabase.from('sources').select('id').eq('active', true),
-      supabase.from('user_interest').select('term, score'),
+      serviceRoleClient.from('user_interest').select('term, score'),
       supabase
         .from('articles')
         .select('source_id')
