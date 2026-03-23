@@ -41,7 +41,7 @@ function saveFeedCache(mode: string, tag: string | null, articles: Article[], cu
 import ArticleCard, { type Article } from './ArticleCard';
 import TopicFilter from './TopicFilter';
 import { useReadingPoints } from '@/hooks/useReadingPoints';
-import { useSeenArticles, getSeenIds } from '@/hooks/useSeenArticles';
+import { useSeenArticles, getSeenIds, clearSeenIds } from '@/hooks/useSeenArticles';
 
 type FeedMode = 'foryou' | 'chronological';
 
@@ -148,15 +148,19 @@ export default function FeedScroller({ activeMode, onModeChange: _onModeChange, 
         const params = new URLSearchParams({ mode });
         if (tag) params.set('tag', tag);
         if (nextCursor) params.set('cursor', nextCursor);
+        let sentSeenIds: string[] = [];
         if (mode === 'foryou') {
-          const seen = getSeenIds().slice(-150); // cap at 150 to keep URL reasonable
-          if (seen.length > 0) params.set('seen', seen.join(','));
+          sentSeenIds = getSeenIds();
+          if (sentSeenIds.length > 0) params.set('seen', sentSeenIds.join(','));
         }
 
         const res = await fetch(`/api/feed?${params}`, { signal });
         if (!res.ok) throw new Error('Could not load feed — check your connection.');
 
         const data: FeedResponse = await res.json();
+
+        // Remove synced seen IDs from localStorage — server has them now
+        if (sentSeenIds.length > 0) clearSeenIds(sentSeenIds);
 
         setArticles((prev) => {
           if (!nextCursor) return data.articles;

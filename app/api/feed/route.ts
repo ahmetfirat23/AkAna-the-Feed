@@ -38,8 +38,6 @@ const ARTICLE_SELECT = `
 const DAY_MS = 1000 * 60 * 60 * 24
 const USER_INTEREST_ALPHA = 0.5 // blend weight for user interest signal
 const USER_INTEREST_SCALE = 10  // normalises raw dot product to ~[0,1]
-const P_DISCO_THRESHOLD = 5     // max 7d article count to qualify as "slow source"
-const P_DISCO_PROB = 0.25       // probability of revival injection per slow source
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -65,11 +63,15 @@ export async function GET(request: NextRequest) {
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * DAY_MS).toISOString()
 
-    // Parse client-provided seen IDs
+    // Parse client-provided seen IDs and mark them in DB
     const seenParam = searchParams.get('seen') ?? ''
     const clientSeenIds = seenParam ? seenParam.split(',').filter(Boolean) : []
 
-    // Fetch sources, user interest, and 7d article counts in parallel (3 queries)
+    // Fetch sources, user interest, 7d article counts, and mark seen — all in parallel
+    const markSeenPromise = clientSeenIds.length > 0
+      ? serviceRoleClient.from('articles').update({ is_seen: true } as never).in('id', clientSeenIds)
+      : Promise.resolve()
+
     const [
       { data: activeSources },
       { data: userInterestRows },
@@ -82,6 +84,7 @@ export async function GET(request: NextRequest) {
         .select('source_id')
         .gte('published_at', new Date(Date.now() - 7 * DAY_MS).toISOString())
         .eq('is_duplicate', false),
+      markSeenPromise,
     ])
 
     const activeSourceRows = (activeSources ?? []) as { id: string; custom_tags: string[] }[]
@@ -110,20 +113,15 @@ export async function GET(request: NextRequest) {
       source7dCount.set(row.source_id, (source7dCount.get(row.source_id) ?? 0) + 1)
     }
 
-    // Single articles query — exclude seen IDs, cap at 30 days (1 query)
-    let articlesQuery = supabase
+    // Single articles query — filter unseen via index, cap at 30 days (1 query)
+    const { data: articlesRaw } = await supabase
       .from('articles')
       .select(ARTICLE_SELECT)
       .eq('is_duplicate', false)
+      .eq('is_seen', false)
       .gte('published_at', thirtyDaysAgo)
       .order('published_at', { ascending: false })
       .limit(300)
-
-    if (clientSeenIds.length > 0) {
-      articlesQuery = articlesQuery.not('id', 'in', `(${clientSeenIds.join(',')})`)
-    }
-
-    const { data: articlesRaw } = await articlesQuery
     const allRows = (articlesRaw ?? []) as unknown as ArticleRow[]
 
     // Tag filter

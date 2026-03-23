@@ -96,6 +96,20 @@ export function getSeenIds(): string[] {
   return Object.keys(loadSeenMap())
 }
 
+/** Remove specific IDs from the seen map after they've been synced to the server. */
+export function clearSeenIds(ids: string[]): void {
+  if (ids.length === 0) return
+  const map = loadSeenMap()
+  let dirty = false
+  for (const id of ids) {
+    if (id in map) {
+      delete map[id]
+      dirty = true
+    }
+  }
+  if (dirty) saveSeenMap(map)
+}
+
 export function useSeenArticles() {
 
   /**
