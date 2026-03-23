@@ -306,12 +306,20 @@ function AddSourceForm({ onAdded }: AddSourceFormProps) {
 function SourceRow({
   source,
   onDelete,
+  onUpdate,
 }: {
   source: Source;
   onDelete: (id: string) => void;
+  onUpdate: (updated: Source) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(source.name);
+  const [editTagInput, setEditTagInput] = useState("");
+  const [editTags, setEditTags] = useState<string[]>(source.custom_tags);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   async function handleDelete() {
     if (!confirmDelete) {
@@ -334,12 +342,150 @@ function SourceRow({
     }
   }
 
+  function startEdit() {
+    setEditName(source.name);
+    setEditTags([...source.custom_tags]);
+    setEditTagInput("");
+    setEditError(null);
+    setEditing(true);
+    setConfirmDelete(false);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setEditError(null);
+  }
+
+  function addEditTag() {
+    const trimmed = editTagInput.trim();
+    if (trimmed && !editTags.includes(trimmed)) {
+      setEditTags((prev) => [...prev, trimmed]);
+    }
+    setEditTagInput("");
+  }
+
+  function removeEditTag(tag: string) {
+    setEditTags((prev) => prev.filter((t) => t !== tag));
+  }
+
+  function handleEditTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addEditTag();
+    }
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+
+    const allTags = [
+      ...editTags,
+      ...editTagInput.split(",").map((t) => t.trim()).filter(Boolean),
+    ];
+    const uniqueTags = [...new Set(allTags)];
+
+    if (!editName.trim()) {
+      setEditError("Name is required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: source.id, name: editName.trim(), tags: uniqueTags }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setEditError(body.error ?? `Error ${res.status}`);
+        return;
+      }
+      onUpdate({ ...source, name: body.name, custom_tags: body.custom_tags });
+      setEditing(false);
+    } catch {
+      setEditError("Couldn't save — check your connection.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const displayUrl =
     source.url.length > 52 ? source.url.slice(0, 50) + "…" : source.url;
 
+  if (editing) {
+    return (
+      <div className="py-3 border-b border-border last:border-b-0">
+        <form onSubmit={handleSave} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="flex-1 px-2 py-1 text-sm bg-bg-base border border-border rounded text-text-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-accent-primary focus-visible:outline-offset-0"
+              placeholder="Source name"
+              autoFocus
+            />
+          </div>
+          <div>
+            {editTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {editTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 bg-accent-soft text-accent-primary text-xs font-medium px-2 py-0.5 rounded-full"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeEditTag(tag)}
+                      className="hover:opacity-70 transition-opacity duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-primary rounded-full"
+                      aria-label={`Remove tag ${tag}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <input
+              type="text"
+              value={editTagInput}
+              onChange={(e) => setEditTagInput(e.target.value)}
+              onKeyDown={handleEditTagKeyDown}
+              onBlur={addEditTag}
+              className="w-full px-2 py-1 text-sm bg-bg-base border border-border rounded text-text-primary placeholder:text-text-secondary focus:outline-none focus-visible:outline-2 focus-visible:outline-accent-primary focus-visible:outline-offset-0"
+              placeholder="Tags (Enter or comma to add)"
+            />
+          </div>
+          {editError && (
+            <p className="text-xs text-[#EF4444]" role="alert">{editError}</p>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="text-xs px-3 py-1 rounded border border-accent-primary text-accent-primary hover:bg-accent-primary hover:text-white transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="text-xs px-3 py-1 rounded border border-border text-text-secondary hover:text-text-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-start gap-3 py-3 border-b border-border last:border-b-0">
-      {/* Health dot + meta */}
+      {/* Health dot */}
       <div className="flex items-center gap-2 mt-0.5 shrink-0">
         <HealthDot source={source} />
       </div>
@@ -399,19 +545,28 @@ function SourceRow({
         </div>
       </div>
 
-      {/* Delete */}
-      <button
-        onClick={handleDelete}
-        disabled={deleting}
-        className={`shrink-0 text-xs px-2 py-1 rounded border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:opacity-50 ${
-          confirmDelete
-            ? "border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444] hover:text-white"
-            : "border-border text-text-secondary hover:border-[#EF4444] hover:text-[#EF4444]"
-        }`}
-        aria-label={confirmDelete ? `Confirm delete ${source.name}` : `Delete ${source.name}`}
-      >
-        {deleting ? "Deleting…" : confirmDelete ? "Confirm" : "Delete"}
-      </button>
+      {/* Actions */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={startEdit}
+          className="text-xs px-2 py-1 rounded border border-border text-text-secondary hover:border-accent-primary hover:text-accent-primary transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary"
+          aria-label={`Edit ${source.name}`}
+        >
+          Edit
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className={`text-xs px-2 py-1 rounded border transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary disabled:opacity-50 ${
+            confirmDelete
+              ? "border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444] hover:text-white"
+              : "border-border text-text-secondary hover:border-[#EF4444] hover:text-[#EF4444]"
+          }`}
+          aria-label={confirmDelete ? `Confirm delete ${source.name}` : `Delete ${source.name}`}
+        >
+          {deleting ? "Deleting…" : confirmDelete ? "Confirm" : "Delete"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -462,6 +617,13 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
 
   function handleDeleted(id: string) {
     setSources((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  function handleUpdated(updated: Source) {
+    setSources((prev) =>
+      prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    );
   }
 
   async function handleFetch() {
@@ -578,6 +740,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
                   key={source.id}
                   source={source}
                   onDelete={handleDeleted}
+                  onUpdate={handleUpdated}
                 />
               ))}
             </div>

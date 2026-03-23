@@ -123,6 +123,59 @@ export async function POST(request: Request) {
   })
 }
 
+export async function PATCH(request: Request) {
+  const session = await getSession()
+  if (!session.isAdmin) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
+  let body: { id?: string; name?: string; tags?: string[] }
+  try {
+    body = await request.json()
+  } catch {
+    return new Response('Bad Request', { status: 400 })
+  }
+
+  const { id, name, tags } = body
+
+  if (!id || typeof id !== 'string') {
+    return new Response(JSON.stringify({ error: 'id is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    return new Response(JSON.stringify({ error: 'name is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  if (!Array.isArray(tags)) {
+    return new Response(JSON.stringify({ error: 'tags must be an array' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  const { data, error } = await serviceRoleClient
+    .from('sources')
+    .update({ name: name.trim(), custom_tags: tags } as unknown as never)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  return Response.json(data)
+}
+
 export async function DELETE(request: Request) {
   const session = await getSession()
   if (!session.isAdmin) {

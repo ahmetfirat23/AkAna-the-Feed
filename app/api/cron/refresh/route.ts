@@ -6,19 +6,38 @@ import { generateSummaries } from '@/lib/openai';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+// Common English stop words that carry no discriminative signal in news titles.
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+  'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+  'has', 'have', 'had', 'will', 'would', 'could', 'should', 'may', 'might',
+  'it', 'its', 'this', 'that', 'as', 'up', 'out', 'if', 'about', 'into',
+  'not', 'no', 'so', 'do', 'did', 'does', 'how', 'what', 'why', 'when',
+  'who', 'which', 'than', 'then', 'now', 'just', 'also', 'more', 'new',
+]);
+
 /**
- * Compute a word-overlap ratio between two title strings.
+ * Compute a word-overlap ratio between two title strings, ignoring stop words.
  * Returns a value in [0, 1]. Used as a lightweight proxy for pg_trgm similarity
- * when calling from JS (we can't easily pass dynamic params to pg_trgm via the
- * Supabase JS SDK without a stored procedure).
+ * when calling from JS.
+ *
+ * Stop words are stripped before comparison so common filler words ("the",
+ * "a", "of", etc.) don't inflate similarity scores between unrelated titles.
+ * Threshold for duplicate detection is 0.5 (was 0.6 before stop-word removal).
  */
 function titleSimilarity(a: string, b: string): number {
   const tokenise = (s: string) =>
-    new Set(s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+    new Set(
+      s.toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 1 && !STOP_WORDS.has(w)),
+    );
 
   const setA = tokenise(a);
   const setB = tokenise(b);
 
+  // If either title has no meaningful words after filtering, can't compare.
   if (setA.size === 0 || setB.size === 0) return 0;
 
   let overlap = 0;
@@ -149,7 +168,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         // Duplicate detection: word-overlap on titles from other sources (past 48h)
         let isDuplicate = false;
         for (const recent of recentTitles) {
-          if (titleSimilarity(article.title, recent.title) > 0.6) {
+          if (titleSimilarity(article.title, recent.title) > 0.3) {
             isDuplicate = true;
             break;
           }
