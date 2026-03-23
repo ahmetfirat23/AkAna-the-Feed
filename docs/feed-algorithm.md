@@ -1,7 +1,7 @@
 # Feed Algorithm
 
 This document describes how articles are selected and ranked in AkAna's two feed modes.
-It is intended as a living spec — update it before changing the ranking logic in `app/api/feed/route.ts`.
+Update it before changing the ranking logic in `app/api/feed/route.ts`.
 
 ---
 
@@ -17,117 +17,152 @@ It is intended as a living spec — update it before changing the ranking logic 
 
 **Notable properties:**
 - No score, no engagement signal. Pure date order.
-- High-volume sources (Variety, AV Club) naturally dominate the top of the feed because they publish more.
-- Slow-publishing sources (The Gradient) appear deep in the feed and require many scroll loads to reach.
-- The chronological position is persisted to localStorage so returning to the feed restores your scroll position.
+- High-volume sources naturally dominate because they publish more.
+- Scroll position persisted to `localStorage` (`akana_chrono_last`) and restored on back-navigation.
 
 ---
 
 ## For You mode
 
-**Goal:** Surface articles the user is likely to care about, balanced across all sources, without burying slow publishers or over-representing high-volume ones.
+**Goal:** Surface articles the user is likely to care about, balanced across topics and sources, without burying slow publishers or over-representing high-volume ones.
 
-### Step 1 — Per-source article pool
+### Step 0 — Seen article exclusion (client → server)
 
-Instead of a global `ORDER BY published_at LIMIT N`, we fetch the **15 most recent articles from each active source in parallel**.
+Before scoring, the client sends its seen article IDs with the request:
 
-This guarantees every source — including slow publishers that post once a month — is represented in the scoring pool. A global date-ordered limit would exclude them entirely when high-volume sources fill the window.
+```
+GET /api/feed?mode=foryou&seen=id1,id2,...
+```
+
+The client caps the list at 150 IDs (most recent). The server excludes these from the query entirely, so articles the user has already scrolled past never consume bandwidth or scoring budget.
+
+Seen IDs are tracked client-side in `localStorage` (`akana_seen`) via `hooks/useSeenArticles.ts`. An article is marked seen when it enters the viewport (50% visible), not when it's fetched.
+
+### Step 1 — Candidate pool (single query)
+
+A single Supabase query fetches up to **300 unseen articles from the last 30 days**, ordered by `published_at DESC`:
+
+```sql
+SELECT ... FROM articles
+WHERE is_duplicate = false
+  AND published_at >= now() - interval '30 days'
+  AND id NOT IN (<seen_ids>)
+ORDER BY published_at DESC
+LIMIT 300
+```
+
+This runs in parallel with two metadata queries:
+- `user_interest` — all term→score rows for the user's keyword interest profile
+- `articles` (7-day counts per source) — used for frequency penalty
 
 ### Step 2 — Scoring
 
 Each article is scored:
 
 ```
-score = clickWeight × recency × jitter
+score = recency × clickWeight × (1 + α × userInterest) × jitter / freqPenalty
 ```
 
-**`clickWeight`** (`sources.click_weight`):
-Updated each cron run as `1.0 + (likes in last 7 days × 0.1)`.
-Ranges from 1.0 (never liked) up to ~5–6 for well-liked sources.
-
-**`recency`** (normalised age decay):
+**`recency`** (slow-publisher normalized age decay):
 ```
 normalizedAge = ageInDays                         if source's newest article ≤ 7 days old
               = 7 + (ageInDays - sourceNewestAge)  if source's newest article > 7 days old
 
-recency = exp(−normalizedAge × 0.3)
+recency = exp(−max(0, normalizedAge) × 0.3)
 ```
 
-The normalization is key for slow publishers: if a source's newest article is 33 days old (e.g. The Gradient), that article is scored *as if* it were 7 days old. Articles older than that within the same source still decay normally from the 7-day baseline. This prevents slow publishers from being permanently buried by the recency penalty.
+If a source's newest article is 33 days old, it's scored *as if* 7 days old — preventing slow publishers from being permanently buried by the recency penalty.
 
-Without normalization, a 33-day-old article would score `exp(−9.9) ≈ 0.00005` — effectively invisible even with engagement boosts.
+**`clickWeight`** (`sources.click_weight`):
+Updated each cron run as `1.0 + log(1 + likes_in_7d) × 0.4`.
+Log-scale caps the boost: 49 likes → `2.46×` (was `5.9×` with linear formula, which caused source domination).
 
-**`jitter`** (stable per-article randomness):
+**`userInterest`** (TF-IDF keyword profile, normalized 0–1):
 ```
-idByte = last 2 hex digits of article UUID → 0–255
-jitter = 0.7 + (idByte / 255) × 0.6        → range 0.7–1.3
+dot   = Σ (article_term_score × user_term_score)  for each term in article.tfidf_terms
+userInterest = min(1.0, dot / 10)
+```
+Article TF-IDF terms are computed at cron time and stored in `articles.tfidf_terms`.
+User interest scores are updated via `user_interest` table:
+- Like → `+1.0 / term_count` per term
+- Dislike → `-2.0 / term_count` per term
+- Article open → `+0.2 / term_count` per term
+- Scores decay by `0.95^days_since_updated` each cron run; rows below 0.001 are deleted.
+
+`α = 0.5` blend weight (constant).
+
+**`jitter`** (random per-load variety):
+```
+jitter = 0.7 + Math.random() × 0.6   → range [0.7, 1.3]
+```
+Generated fresh each request so the feed order varies on every reload.
+
+**`freqPenalty`** (dampens high-volume sources):
+```
+freqPenalty = max(1, log(1 + source_7d_article_count))
+```
+A source posting 50 articles/week is penalized by `log(51) ≈ 3.9×`; a source posting 2/week by `log(3) ≈ 1.1×`.
+
+Articles scoring below `0.01` are discarded (stale content, no signal).
+
+### Step 3 — Tag-proportional selection
+
+After sorting by score, slots are allocated **proportionally to the number of sources per tag**:
+
+```
+target_slots[tag] = max(1, round((sources_with_tag / total_sources) × limit))
 ```
 
-Derived from the article ID (not random), so the order is stable across page loads and doesn't flicker when the feed is re-rendered. Breaks strict score ties and gives the feed a less mechanical feel.
+Example: 4 TV sources + 1 AI source → TV gets ~16 slots, AI gets ~4 slots out of 20.
 
-Articles scoring below `0.01` are discarded (stale content with no engagement signal).
+The algorithm iterates the sorted list in order, accepting each article if its tag still has quota remaining. Articles that overflow their tag quota are held and fill any remaining slots after the quota pass.
 
-### Step 3 — Source diversity cap
+### Step 4 — Desequencing
 
-After sorting by score, apply a **max-3-per-source cap**:
-- Iterate through the sorted list in order.
-- Accept each article only if its source has fewer than 3 articles already accepted.
-- Skip (don't discard permanently — they're just not shown this session) if the cap is reached.
+After tag selection, a final pass ensures **no source appears more than 2 times consecutively**:
 
-This prevents a single high-engagement source from filling every slot on page 1.
+- Walk the sorted list; if the last 2 items are from the same source, skip ahead to the next different-source article.
+- Score order is preserved as much as possible — only the minimum displacement needed.
 
-### Step 4 — Pagination
+### Step 5 — Pagination
 
-The diversified pool (up to `17 sources × 3 = 51 articles` with default settings) is sliced by a numeric offset cursor:
-- Page 1: offset 0–19 (`nextCursor = "20"`)
-- Page 2: offset 20–39 (`nextCursor = "40"`)
-- Page 3: offset 40+ (`nextCursor = null`)
+The cursor is a simple string `"more"` when the current page is full (20 articles), or `null` at end of feed. The client passes `?seen=` on every request so the server always works from a fresh unseen pool — there is no offset.
 
-The cursor is a plain integer string, distinct from the ISO-date cursor used in chronological mode.
+**End of feed** is reached when fewer than 20 unseen articles remain in the 30-day window.
 
 ---
 
-## Duplicate detection (cron, not feed)
+## Seen article persistence (`hooks/useSeenArticles.ts`)
 
-During RSS fetch (`app/api/cron/refresh/route.ts`), each new article is checked against the 100 most recent articles from *other* sources published in the last 48 h.
+Articles are tracked in `localStorage` as `Record<articleId, sessionId[]>`.
 
-Similarity is computed as word-overlap ratio **after stripping stop words**:
+A **session ID** is a random UUID generated once per page load (module-level variable). Each browser tab load is a new session — articles accumulate session counts over multiple visits.
 
-```
-tokens(title) = words longer than 1 char, lowercased, with punctuation removed, stop words excluded
-similarity    = |tokens(A) ∩ tokens(B)| / max(|tokens(A)|, |tokens(B)|)
-```
+Hide thresholds scale with `user_interest_score`:
 
-If `similarity > 0.3`, the article is stored with `is_duplicate = true` and filtered from all feed queries.
+| Score range | Hide after N other sessions |
+|---|---|
+| > 0.6 | 3 sessions (high-value, keep re-showing) |
+| 0.2 – 0.6 | 2 sessions (default) |
+| ≤ 0.2 | 1 session (low-interest, discard fast) |
 
-Threshold of 0.3 (down from original 0.6) combined with stop-word removal targets genuine cross-post duplicates (same story, different outlets) while allowing different articles about the same topic.
+The current session's views never cause hiding. Chronological mode ignores seen status entirely.
 
 ---
 
-## Ideas for future improvements
+## Duplicate detection (cron)
 
-> Update this section when you want to try something new before implementing it.
+During RSS fetch (`app/api/cron/refresh/route.ts`), each new article is compared against the 100 most recent non-duplicate articles from *other* sources in the last 48 h.
 
-### TF-IDF article embeddings + collaborative filtering
+Similarity uses `contentSimilarity()`:
+1. Compute token overlap on titles (lowercase, punctuation stripped, stop words removed).
+2. If title similarity is 0.15–0.30 and both articles have summaries, blend in summary similarity: `0.7 × title_sim + 0.3 × summary_sim`.
+3. If combined similarity > 0.3 → `is_duplicate = true`.
 
-**Idea:** Replace or augment the `clickWeight × recency × jitter` scorer with a proper recommendation signal:
+---
 
-1. **Offline (cron):** For each article, compute a TF-IDF vector over its title + description across the corpus. Store the top-N term weights in a new `articles.tfidf_vector` column (sparse, JSON or Postgres array).
-2. **User profile:** Maintain a per-user interest vector — the centroid of TF-IDF vectors for articles the user has liked/opened. Store in `user_profiles` table (or accumulate in a Supabase Edge Function).
-3. **Online scoring:** At feed request time, compute cosine similarity between the user profile vector and each candidate article vector. Blend with the recency signal: `score = α × cosine_sim + (1−α) × recency`.
-4. **Cold start:** For new users (no interaction history), fall back to the current `clickWeight × recency × jitter` scorer.
+## TF-IDF extraction (cron)
 
-**Open questions before implementing:**
-- How large is the vocabulary? TF-IDF on short RSS titles/descriptions may be noisy.
-- Where does the user profile update happen — cron, or edge function on like/click?
-- What `α` blending factor feels right? Start at 0.5 and tune.
-- Consider BM25 instead of TF-IDF for better IDF normalization on short texts.
-- Consider using a lightweight embedding model (e.g. Hugging Face `all-MiniLM-L6-v2`) for semantic similarity instead of token overlap. Could run at cron time, stored as `pgvector` column.
+For each new article, `lib/tfidf.ts` tokenizes `title + summary/description` into unigrams and bigrams (stop words excluded). Top-15 terms by TF-IDF score are stored in `articles.tfidf_terms` as `"term:score"` strings.
 
-### Source-diversity improvement
-
-Current cap is a hard per-source limit (max 3 per page). A softer approach: penalize score by `1 / (1 + count_already_accepted_from_source)` instead of cutting off at 3. This lets high-quality sources still dominate if their content is genuinely better.
-
-### Seen-article memory
-
-The current `useSeenArticles` hook hides articles seen in 2+ prior sessions, client-side. A server-side seen-article table would enable cross-device deduplication and richer "don't show me this again" signals for the recommender.
+Global document frequencies are maintained in `tfidf_stats(term, doc_freq)` and updated each cron run.
